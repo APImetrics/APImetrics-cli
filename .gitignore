@@ -1,0 +1,28 @@
+**/.speakeasy/temp/
+**/.speakeasy/logs/
+.speakeasy/reports
+# .gitignore
+.DS_Store
+apimetrics
+.env
+.env.local
+dist/
+# Generated output - reproduced by running `speakeasy run`
+cmd/
+internal/
+docs/
+scripts/
+go.mod
+go.sum
+README.md
+USAGE.md
+.gitattributes
+.github/
+.goreleaser.yaml
+# Speakeasy runtime files
+.speakeasy/temp/
+.speakeasy/logs/
+.speakeasy/reports/
+.speakeasy/gen.lock
+.speakeasy/out.openapi.yaml
+.speakeasy/workflow.lock
