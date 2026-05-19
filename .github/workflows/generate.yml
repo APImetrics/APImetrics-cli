@@ -1,0 +1,23 @@
+name: Generate CLI
+
+on:
+  repository_dispatch:
+    types: [spec-updated]
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download OpenAPI spec
+        run: curl -s "${{ github.event.client_payload.spec_url }}" > openapi.json
+
+      - name: Run Speakeasy generation
+        uses: speakeasy-api/sdk-generation-action@v15
+        with:
+          speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          openapi_doc_location: ./openapi.json
+          create_release: ${{ github.event.client_payload.environment == 'prod' }}

@@ -17,7 +17,6 @@ go.sum
 README.md
 USAGE.md
 .gitattributes
-.github/
 .goreleaser.yaml
 # Speakeasy runtime files
 .speakeasy/temp/
