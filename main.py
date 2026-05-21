@@ -19,8 +19,7 @@ RESTISH_API_NAME = os.environ.get("RESTISH_API_NAME", "apimetrics")
 @dataclass
 class Config:
     config_path: Path
-    restish_configured: bool
-    authenticated: bool
+    restish_api_name: str | None
     project_id: str | None
 
     def __init__(self, config_path: Path):
@@ -28,30 +27,36 @@ class Config:
         try:
             with open(config_path, 'r') as f:
                 config = json.load(f)
-            self.restish_configured = config.get('restish_configured', False)
-            self.project_id = config.get('project_id', None)
+            self.restish_api_name = config.get("restish_api", None)
+            self.project_id = config.get("project_id", None)
 
         except FileNotFoundError:
-            self.restish_configured = False
+            self.restish_api_name = None
             self.project_id = None
 
     def save(self):
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_path, 'w') as f:
             content = {
-                'restish_configured': self.restish_configured,
+                'restish_api': self.restish_api_name,
                 'project_id': self.project_id
             }
             json.dump(content, f)
 
+    def restish(self, *args) -> str:
+        assert self.restish_api_name, "restish API name not configured"
+        assert self.project_id, "project ID not configured"
+        return restish(self.restish_api_name, *args, "-H", "apimetrics-project-id:" + self.project_id)
 
-def restish(*args) -> str:
+
+def restish(api_name: str, *args: str) -> str:
     """
     Invoke restish with the given arguments.
+    :param api_name: the name of the restish api to invoke
     :param args: arguments to pass to restish
     :return: the output of restish
     """
-    print(f"restish {RESTISH_API_NAME} {' '.join(args)}")
+    print(f"restish {api_name} {' '.join(args)}")
     proc = subprocess.run(
         ["restish", RESTISH_API_NAME, *args],
         text=True,
@@ -100,9 +105,17 @@ def save_restish_apis(apis: dict):
         json.dump(apis, f, indent=2)
 
 
-def configure_restish():
+def configure_restish(config: Config):
+    if not config.restish_api_name:
+        config.restish_api_name = RESTISH_API_NAME
+        config.save()
+
     apis = load_restish_apis()
-    apis["apimetrics"] = {
+    if config.restish_api_name in apis:
+        # already configured
+        return
+
+    apis[config.restish_api_name] = {
         "base": APIMETRICS_BASE_URL,
         "profiles": {
             "default": {
@@ -123,8 +136,12 @@ def configure_restish():
     save_restish_apis(apis)
 
 
-def select_project():
-    response = json.loads(restish("account-list-projects"))
+def select_project(config: Config) -> str:
+    """
+    List the projects and prompt the user to select one.
+    :return: The id of the selected project.
+    """
+    response = json.loads(config.restish("account-list-projects"))
     projects = response["projects"]
     projects_by_org = defaultdict(list)
     for project in projects:
@@ -151,18 +168,16 @@ def select_project():
 if __name__ == '__main__':
     config_path = Path.home() / ".config" / "apimetrics" / "config.json"
     config = Config(config_path)
-    if not config.restish_configured:
-        configure_restish()
-        config.restish_configured = True
+    configure_restish(config)
+
+    if not config.project_id:
+        config.project_id = select_project(config)
         config.save()
 
     if not config.project_id:
-        config.project_id = select_project()
-        if not config.project_id:
-            print("No project selected. Exiting.")
-            exit(1)
-        config.save()
+        print("No project selected. Exiting.")
+        exit(1)
 
     args = sys.argv[1:]
     if len(args):
-        print(restish("-H", f"apimetrics-project-id:{config.project_id}", *args))
+        print(config.restish(*args))
