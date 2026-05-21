@@ -45,8 +45,11 @@ class Config:
 
     def restish(self, *args) -> str:
         assert self.restish_api_name, "restish API name not configured"
-        assert self.project_id, "project ID not configured"
-        return restish(self.restish_api_name, *args, "-H", "apimetrics-project-id:" + self.project_id)
+        cmd = [self.restish_api_name, *args]
+        if self.project_id:
+            cmd.append("-H")
+            cmd.append("apimetrics-project-id:" + self.project_id)
+        return restish(*cmd)
 
 
 def restish(api_name: str, *args: str) -> str:
@@ -56,7 +59,7 @@ def restish(api_name: str, *args: str) -> str:
     :param args: arguments to pass to restish
     :return: the output of restish
     """
-    print(f"restish {api_name} {' '.join(args)}")
+    # print(f"restish {api_name} {' '.join(args)}")
     proc = subprocess.run(
         ["restish", RESTISH_API_NAME, *args],
         text=True,
@@ -106,9 +109,10 @@ def save_restish_apis(apis: dict):
 
 
 def configure_restish(config: Config):
-    if not config.restish_api_name:
+    if config.restish_api_name != RESTISH_API_NAME:
         config.restish_api_name = RESTISH_API_NAME
         config.save()
+        restish("api", "clear-auth-cache", RESTISH_API_NAME)
 
     apis = load_restish_apis()
     if config.restish_api_name in apis:
@@ -162,7 +166,7 @@ def select_project(config: Config) -> str:
     for i, project in enumerate(projects):
         print(f"{i}: {project["project"]["name"]}")
     project_index = int(input("Enter the number of the project you want to use: "))
-    return projects[project_index]['id']
+    return projects[project_index]["project"]["id"]
 
 
 if __name__ == '__main__':
