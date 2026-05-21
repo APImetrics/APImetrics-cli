@@ -43,30 +43,34 @@ class Config:
             }
             json.dump(content, f)
 
-    def restish(self, *args) -> str:
-        assert self.restish_api_name, "restish API name not configured"
-        cmd = [self.restish_api_name, *args]
-        if self.project_id:
-            cmd.append("-H")
-            cmd.append("apimetrics-project-id:" + self.project_id)
-        return restish(*cmd)
 
-
-def restish(api_name: str, *args: str) -> str:
+def _restish(*args: str) -> str:
     """
-    Invoke restish with the given arguments.
-    :param api_name: the name of the restish api to invoke
+    Low level invocation of restish with the given arguments.
     :param args: arguments to pass to restish
     :return: the output of restish
     """
-    # print(f"restish {api_name} {' '.join(args)}")
     proc = subprocess.run(
-        ["restish", RESTISH_API_NAME, *args],
+        ["restish", *args],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT
     )
     return proc.stdout
+
+
+def restish(config: Config, *args: str) -> str:
+    """
+    Invoke restish with the given configuration and arguments.
+    :param config: CLI config
+    :param args: restish arguments
+    :return: the output of restish
+    """
+    assert config.restish_api_name, "restish API name not configured"
+    cmd = [config.restish_api_name, *args]
+    if config.project_id:
+        cmd.extend(["-H", "apimetrics-project-id:" + config.project_id])
+    return _restish(*cmd)
 
 
 @functools.cache
@@ -75,7 +79,7 @@ def get_restish_config_path() -> Path:
     Find the path to the restish config directory.
     :return: A Path object pointing to the restish config directory.
     """
-    output = restish("localhost", "-v")
+    output = _restish("localhost", "-v")
     config_re = re.compile(r".*Configuration: map\[(.*)\]$")
     keyword_re = re.compile(r"([\w\-]+):")
     for line in output.splitlines():
@@ -145,7 +149,7 @@ def select_project(config: Config) -> str:
     List the projects and prompt the user to select one.
     :return: The id of the selected project.
     """
-    response = json.loads(config.restish("account-list-projects"))
+    response = json.loads(restish(config, "account-list-projects"))
     projects = response["projects"]
     projects_by_org = defaultdict(list)
     for project in projects:
@@ -184,4 +188,4 @@ if __name__ == '__main__':
 
     args = sys.argv[1:]
     if len(args):
-        print(config.restish(*args))
+        print(restish(config, *args))
