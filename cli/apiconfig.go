@@ -1,20 +1,34 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/google/shlex"
 	"github.com/spf13/viper"
 )
 
-// apis holds the per-API configuration.
-var apis *viper.Viper
+// buildCfg holds the API endpoint and auth parameters baked in at build time.
+var buildCfg struct {
+	BaseURL      string
+	AuthURL      string
+	TokenURL     string
+	AuthAudience string
+	ClientID     string
+}
+
+// SetBuildConfig sets the API endpoint and auth parameters baked in at build
+// time. Must be called before cli.Init.
+func SetBuildConfig(baseURL, authURL, tokenURL, authAudience, clientID string) {
+	buildCfg.BaseURL = baseURL
+	buildCfg.AuthURL = authURL
+	buildCfg.TokenURL = tokenURL
+	buildCfg.AuthAudience = authAudience
+	buildCfg.ClientID = clientID
+}
 
 // APIAuth describes the auth type and parameters for an API.
 type APIAuth struct {
@@ -57,86 +71,43 @@ type APIConfig struct {
 	TLS           *TLSConfig             `json:"tls,omitempty" yaml:"tls,omitempty" mapstructure:",omitempty"`
 }
 
-// Save the API configuration to disk.
-func (a APIConfig) Save() error {
-	apis.Set(a.name, a)
-	return apis.WriteConfig()
-}
-
-// Return colorized string of configuration in JSON or YAML
-func (a APIConfig) GetPrettyDisplay(outFormat string) ([]byte, error) {
-	// marshal
-	if outFormat == "auto" {
-		outFormat = "json"
-	}
-	marshalled, err := MarshalShort(outFormat, true, a)
-	if err != nil {
-		return nil, errors.New("unable to render configuration")
-	}
-
-	if !useColor {
-		return marshalled, nil
-	}
-
-	// colorize
-	marshalled, err = Highlight(outFormat, marshalled)
-	if err != nil {
-		return nil, errors.New("unable to colorize output")
-	}
-
-	return marshalled, nil
-}
+// Save is a no-op: API configuration is static, baked in at build time.
+func (a APIConfig) Save() error { return nil }
 
 type apiConfigs map[string]*APIConfig
 
 var configs apiConfigs
 
 func initAPIConfig() {
-	apis = viper.New()
+	state := loadState()
 
-	apis.SetConfigName("apis")
-	apis.AddConfigPath(viper.GetString("config-directory"))
-
-	// Write a blank cache if no file is already there. Later you can use
-	// configs.SaveConfig() to write new values.
-	filename := filepath.Join(viper.GetString("config-directory"), "apis.json")
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		if err := os.WriteFile(filename, []byte("{}"), 0600); err != nil {
-			panic(err)
+	profile := &APIProfile{
+		Auth: &APIAuth{
+			Name: "oauth-authorization-code",
+			Params: map[string]string{
+				"authorize_url": buildCfg.AuthURL + "?audience=" + buildCfg.AuthAudience,
+				"token_url":     buildCfg.TokenURL,
+				"client_id":     buildCfg.ClientID,
+				"client_secret": "",
+				"redirect_url":  "",
+				"scopes":        "openid profile email",
+			},
+		},
+	}
+	if state.ProjectID != "" {
+		profile.Headers = map[string]string{
+			"Apimetrics-Project-Id": state.ProjectID,
 		}
 	}
 
-	err := apis.ReadInConfig()
-	if err != nil {
-		panic(err)
-	}
-
-	if apis.GetString("$schema") == "" {
-		apis.Set("$schema", "https://schemas.apicontext.com/cli/apis.json")
-		apis.WriteConfig()
-	}
-
-	// Register API sub-commands
-	configs = apiConfigs{}
-	tmp := viper.New()
-	for k, v := range apis.AllSettings() {
-		if k == "$schema" {
-			continue
-		}
-		tmp.Set(k, v)
-	}
-	if err := tmp.Unmarshal(&configs); err != nil {
-		panic(err)
-	}
-
-	seen := map[string]bool{}
-	for apiName, config := range configs {
-		if seen[config.Base] {
-			panic(fmt.Errorf("multiple APIs configured with the same base URL: %s", config.Base))
-		}
-		seen[config.Base] = true
-		config.name = apiName
-		configs[apiName] = config
+	configs = apiConfigs{
+		"apimetrics": {
+			name: "apimetrics",
+			Base: buildCfg.BaseURL,
+			Profiles: map[string]*APIProfile{
+				"default": profile,
+			},
+		},
 	}
 }
 

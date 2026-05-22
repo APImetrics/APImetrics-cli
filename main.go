@@ -13,6 +13,15 @@ var version string = "dev"
 var commit string
 var date string
 
+// Build-time API configuration — override with -ldflags at build time:
+//
+//	go build -ldflags "-X main.baseURL=https://client.apimetrics.io ..."
+var baseURL = "https://qc-client.apimetrics.io"
+var authURL = "https://qc-auth.apimetrics.io/authorize"
+var tokenURL = "https://qc-auth.apimetrics.io/oauth/token"
+var authAudience = "https://client.apimetrics.io"
+var clientID = "bj0yh0AjBMzfeOpffmCj5UP8FbmYDwcM"
+
 func main() {
 	if version == "dev" {
 		// Try to add the executable modification time to the dev version.
@@ -22,6 +31,7 @@ func main() {
 		}
 	}
 
+	cli.SetBuildConfig(baseURL, authURL, tokenURL, authAudience, clientID)
 	cli.Init("apimetrics", version)
 
 	// Register default encodings, content type handlers, and link parsers.
