@@ -18,6 +18,11 @@ import (
 	"golang.org/x/text/language"
 )
 
+// LoadedAPI is the API loaded at startup, available after Run() has completed
+// its loading step. Useful for custom commands that need to resolve operation
+// URI templates without hardcoding paths.
+var LoadedAPI API
+
 // API represents an abstracted API description used to build CLI commands
 // around available resources, operations, and links. An API is produced by
 // a Loader and cached by the CLI in-between runs when possible.

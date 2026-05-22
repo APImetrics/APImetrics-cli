@@ -3,10 +3,10 @@ package main
 import (
 	"os"
 
-	"github.com/rest-sh/restish/bulk"
-	"github.com/rest-sh/restish/cli"
-	"github.com/rest-sh/restish/oauth"
-	"github.com/rest-sh/restish/openapi"
+	"apicontext.com/apimetrics/bulk"
+	"apicontext.com/apimetrics/cli"
+	"apicontext.com/apimetrics/oauth"
+	"apicontext.com/apimetrics/openapi"
 )
 
 var version string = "dev"

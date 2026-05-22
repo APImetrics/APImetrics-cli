@@ -8,8 +8,8 @@ import (
 
 	"github.com/amzn/ion-go/ion"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/rest-sh/restish/cli"
-	"github.com/rest-sh/restish/openapi"
+	"apicontext.com/apimetrics/cli"
+	"apicontext.com/apimetrics/openapi"
 	"github.com/shamaton/msgpack/v2"
 	"github.com/spf13/cobra"
 )

@@ -10,7 +10,9 @@ import (
 
 // State holds user-mutable CLI state persisted between runs.
 type State struct {
-	ProjectID string `json:"project_id,omitempty"`
+	ProjectID   string `json:"project_id,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
+	OrgName     string `json:"org_name,omitempty"`
 }
 
 func loadState() State {

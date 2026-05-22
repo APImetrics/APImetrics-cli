@@ -29,7 +29,7 @@ import (
 	"golang.org/x/exp/maps"
 	"gopkg.in/yaml.v3"
 
-	"github.com/rest-sh/restish/cli"
+	"apicontext.com/apimetrics/cli"
 )
 
 // reOpenAPI3 is a regex used to detect OpenAPI files from their contents.
@@ -353,7 +353,7 @@ func openapiOperation(cmd *cobra.Command, method string, uriTemplate *url.URL, p
 		name = override
 	} else if oldName := slug.Make(op.OperationId); oldName != "" && oldName != name {
 		// For backward-compatibility, add the old naming scheme as an alias
-		// if it is different. See https://github.com/rest-sh/restish/issues/29
+		// if it is different. See https://apicontext.com/apimetrics/issues/29
 		// for additional context; we prefer kebab casing for readability.
 		aliases = append(aliases, oldName)
 	}

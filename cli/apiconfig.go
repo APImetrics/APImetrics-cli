@@ -115,7 +115,7 @@ func findAPI(uri string) (string, *APIConfig) {
 	apiName := viper.GetString("api-name")
 
 	for name, config := range configs {
-		// fixes https://github.com/rest-sh/restish/issues/128
+		// fixes https://apicontext.com/apimetrics/issues/128
 		if len(apiName) > 0 && name != apiName {
 			continue
 		}

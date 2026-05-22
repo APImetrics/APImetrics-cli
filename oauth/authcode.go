@@ -17,7 +17,7 @@ import (
 	"context"
 
 	"github.com/mattn/go-isatty"
-	"github.com/rest-sh/restish/cli"
+	"apicontext.com/apimetrics/cli"
 	"golang.org/x/oauth2"
 )
 

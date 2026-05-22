@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/rest-sh/restish/cli"
+	"apicontext.com/apimetrics/cli"
 )
 
 // parseURL parses the input as a URL ignoring any errors

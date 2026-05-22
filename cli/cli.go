@@ -162,6 +162,7 @@ func Init(name string, version string) {
 	})
 
 	initAPIConfig()
+	AddConfigCommands(Root)
 }
 
 func userHomeDir() string {
@@ -364,9 +365,11 @@ func Run() (returnErr error) {
 		if p := cfg.Profiles[profile]; p != nil && p.Base != "" {
 			currentBase = p.Base
 		}
-		if _, err := Load(currentBase, Root); err != nil {
+		api, err := Load(currentBase, Root)
+		if err != nil {
 			panic(err)
 		}
+		LoadedAPI = api
 		break
 	}
 

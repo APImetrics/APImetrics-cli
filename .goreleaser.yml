@@ -1,6 +1,6 @@
 version: 2
 
-project_name: restish
+project_name: apimetrics
 
 before:
   hooks:
@@ -9,7 +9,7 @@ before:
     - go test -v ./...
 
 builds:
-  - id: restish-darwin-amd64
+  - id: apimetrics-darwin-amd64
     goos:
       - darwin
     goarch:
@@ -19,7 +19,7 @@ builds:
       - CC=o64-clang
       - CXX=o64-clang++
 
-  - id: restish-darwin-arm64
+  - id: apimetrics-darwin-arm64
     goos:
       - darwin
     goarch:
@@ -29,7 +29,7 @@ builds:
       - CC=oa64-clang
       - CXX=oa64-clang++
 
-  - id: restish-linux-amd64
+  - id: apimetrics-linux-amd64
     goos:
       - linux
     goarch:
@@ -39,7 +39,7 @@ builds:
       - CC=x86_64-linux-gnu-gcc
       - CXX=x86_64-linux-gnu-g++
 
-  - id: restish-linux-arm64
+  - id: apimetrics-linux-arm64
     goos:
       - linux
     goarch:
@@ -49,7 +49,7 @@ builds:
       - CC=aarch64-linux-gnu-gcc
       - CXX=aarch64-linux-gnu-g++
 
-  - id: restish-windows-amd64
+  - id: apimetrics-windows-amd64
     goos:
       - windows
     goarch:
@@ -65,27 +65,6 @@ archives:
       - goos: windows
         formats:
           - zip
-
-homebrew_casks:
-  - name: restish
-    homepage: https://rest.sh
-    description: "Restish is a CLI for interacting with REST-ish HTTP APIs with some nice features built-in."
-    repository:
-      owner: rest-sh
-      name: homebrew-tap
-      branch: main
-      git:
-        url: "git@github.com:rest-sh/homebrew-tap.git"
-        private_key: /tmp/homebrew_repo_id_ed25519
-    commit_author:
-      name: Restish Releaser
-      email: release@rest.sh
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/restish"]
-          end
 
 checksum:
   name_template: "checksums.txt"
