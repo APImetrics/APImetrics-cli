@@ -22,7 +22,7 @@ func main() {
 		}
 	}
 
-	cli.Init("restish", version)
+	cli.Init("apimetrics", version)
 
 	// Register default encodings, content type handlers, and link parsers.
 	cli.Defaults()

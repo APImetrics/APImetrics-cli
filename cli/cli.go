@@ -240,13 +240,13 @@ func Init(name string, version string) {
 
 	Root = &cobra.Command{
 		Use:     filepath.Base(os.Args[0]),
-		Long:    "A generic client for REST-ish APIs <https://rest.sh/>",
+		Long:    "The APImetrics CLI — manage monitors, SLOs, schedules, and more from your terminal.",
 		Version: version,
-		Example: fmt.Sprintf(`  # Get a URI
-  $ %s google.com
+		Example: fmt.Sprintf(`  # List your monitors
+  $ %s apimetrics list-monitors
 
-  # Specify verb, header, and body shorthand
-  $ %s post :8888/users -H authorization:abc123 name: Kari, role: admin`, name, name),
+  # Create a monitor with shorthand body
+  $ %s post apimetrics:/monitors name: "Checkout flow", url: https://example.com/checkout`, name, name),
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: completeGenericCmd(http.MethodGet, false),
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {

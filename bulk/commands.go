@@ -313,8 +313,8 @@ func Init(cmd *cobra.Command) {
 	bulk := cobra.Command{
 		GroupID: "generic",
 		Use:     "bulk",
-		Short:   "Client-side bulk resource management https://rest.sh/#/bulk",
-		Example: "  " + os.Args[0] + " bulk init api.rest.sh/books\n  " + os.Args[0] + " bulk list -m 'rating_average >= 4.8'\n  " + os.Args[0] + " bulk status",
+		Short:   "Client-side bulk resource management",
+		Example: "  " + os.Args[0] + " bulk init apimetrics:/monitors\n  " + os.Args[0] + " bulk list -m 'name contains checkout'\n  " + os.Args[0] + " bulk status",
 	}
 
 	bulk.AddGroup(
@@ -341,7 +341,7 @@ func Init(cmd *cobra.Command) {
     "version": "..."
   }
 ]
-` + "```\n\nThe following fields will automatically be found and used:\n\n- Resource URL: `url`, `uri`, `self`, `link`\n- Resource version: `version`, `etag`, `last_modified`, `lastModified`, `modified`.\n\nFiltering (if used) runs *before* URL template rendering.\n\nRestish assumes resources have client-generated IDs and use HTTP `PUT`, but if that's not the case then you can still create new resources manually with `restish POST ...`.",
+` + "```\n\nThe following fields will automatically be found and used:\n\n- Resource URL: `url`, `uri`, `self`, `link`\n- Resource version: `version`, `etag`, `last_modified`, `lastModified`, `modified`.\n\nFiltering (if used) runs *before* URL template rendering.\n\nThe CLI assumes resources have client-generated IDs and use HTTP `PUT`, but if that's not the case then you can still create new resources manually with `apimetrics POST ...`.",
 		Args:    cobra.ExactArgs(1),
 		Example: "  " + os.Args[0] + " bulk init api.example.com/users -f 'body.{url, version: last_login}'\n  " + os.Args[0] + " bulk init api.example.com/users -f 'body.{id, version: last_login}' --url-template='/users/{id}'",
 		Run: func(cmd *cobra.Command, args []string) {

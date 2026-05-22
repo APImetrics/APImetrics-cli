@@ -70,7 +70,7 @@ func (a *BasicAuth) OnRequest(req *http.Request, key string, params map[string]s
 
 // ExternalToolAuth defers authentication to a third party tool.
 // This avoids baking all possible authentication implementations
-// inside restish itself.
+// inside the CLI itself.
 type ExternalToolAuth struct{}
 
 // Request is used to exchange requests with the external tool.

@@ -247,7 +247,7 @@ func MakeRequest(req *http.Request, options ...requestOption) (*http.Response, e
 	}
 
 	if req.Header.Get("user-agent") == "" {
-		req.Header.Set("user-agent", "restish-"+Root.Version)
+		req.Header.Set("user-agent", "apimetrics-"+Root.Version)
 	}
 
 	if req.Header.Get("accept") == "" {

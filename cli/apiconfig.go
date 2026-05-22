@@ -116,8 +116,7 @@ func initAPIConfig() {
 	}
 
 	if apis.GetString("$schema") == "" {
-		// Attempt to update the config to add the schema for docs/validation.
-		apis.Set("$schema", "https://rest.sh/schemas/apis.json")
+		apis.Set("$schema", "https://schemas.apicontext.com/cli/apis.json")
 		apis.WriteConfig()
 	}
 
