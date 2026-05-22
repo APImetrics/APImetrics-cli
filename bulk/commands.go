@@ -311,8 +311,8 @@ func getRemoteDiffs(meta *Meta) error {
 // Init the bulk commands given a parent command.
 func Init(cmd *cobra.Command) {
 	bulk := cobra.Command{
-		GroupID: "generic",
-		Use:     "bulk",
+		Hidden: true,
+		Use:    "bulk",
 		Short:   "Client-side bulk resource management",
 		Example: "  " + os.Args[0] + " bulk init apimetrics:/monitors\n  " + os.Args[0] + " bulk list -m 'name contains checkout'\n  " + os.Args[0] + " bulk status",
 	}
