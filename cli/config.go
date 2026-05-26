@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 // AddConfigCommands registers APImetrics-specific configuration commands on
@@ -18,6 +19,8 @@ func AddConfigCommands(root *cobra.Command) {
 	project.AddCommand(projectSelectCmd())
 	project.AddCommand(projectShowCmd())
 	root.AddCommand(project)
+	root.AddCommand(loginCmd())
+	root.AddCommand(logoutCmd())
 }
 
 func projectSelectCmd() *cobra.Command {
@@ -273,4 +276,73 @@ func parseProjectsResponse(body map[string]any) ([]projectEntry, map[string]stri
 	}
 
 	return entries, usedOrgs, nil
+}
+
+func loginCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "login",
+		Short: "Log in to APImetrics",
+		Long:  "Log in to APImetrics. Commands will automatically trigger login if needed, so this is rarely required.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := configs["apimetrics"]
+			if cfg == nil {
+				return fmt.Errorf("API configuration not found")
+			}
+			profile := cfg.Profiles[viper.GetString("rsh-profile")]
+			if profile == nil || profile.Auth == nil || profile.Auth.Name == "" {
+				return fmt.Errorf("no auth configured for profile %q", viper.GetString("rsh-profile"))
+			}
+			handler, ok := authHandlers[profile.Auth.Name]
+			if !ok {
+				return fmt.Errorf("unknown auth handler %q", profile.Auth.Name)
+			}
+
+			// Use a dummy request — we only want the side effect of fetching and
+			// caching the token, not to actually send a request.
+			dummy, _ := http.NewRequest(http.MethodGet, cfg.Base, nil)
+			key := "apimetrics:" + viper.GetString("rsh-profile")
+			if err := handler.OnRequest(dummy, key, profile.Auth.Params); err != nil {
+				return err
+			}
+
+			fmt.Fprintln(Stdout, "Logged in successfully.")
+			return nil
+		},
+	}
+}
+
+func logoutCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "logout",
+		Short: "Log out to remove access to APImetrics",
+		Long:  "Remove the cached login credentials and active project, forcing re-authentication on the next request.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			key := "apimetrics:default"
+			Cache.Set(key+".token", "")
+			Cache.Set(key+".refresh", "")
+			Cache.Set(key+".type", "")
+			Cache.Set(key+".expires", "")
+
+			if err := Cache.WriteConfig(); err != nil {
+				return fmt.Errorf("could not write cache: %w", err)
+			}
+
+			if err := SaveState(State{}); err != nil {
+				return fmt.Errorf("could not clear project state: %w", err)
+			}
+
+			// Clear the in-memory profile so any further calls in this process
+			// don't send a stale project header.
+			if cfg := configs["apimetrics"]; cfg != nil {
+				if p := cfg.Profiles["default"]; p != nil {
+					delete(p.Headers, "Apimetrics-Project-Id")
+				}
+			}
+
+			fmt.Fprintln(Stdout, "Logged out.")
+			return nil
+		},
+	}
 }
