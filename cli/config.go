@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -278,6 +279,61 @@ func parseProjectsResponse(body map[string]any) ([]projectEntry, map[string]stri
 	return entries, usedOrgs, nil
 }
 
+func selectProjectIfUnset() error {
+	state := loadState()
+	if state.ProjectID != "" {
+		return nil
+	}
+
+	fmt.Fprintln(Stdout, "No active project set. Please select a project to continue.")
+	id, projectName, orgName, err := interactiveSelectProject()
+	if err != nil {
+		return fmt.Errorf("a project must be selected before running commands: %w", err)
+	}
+
+	if err := SaveState(State{ProjectID: id, ProjectName: projectName, OrgName: orgName}); err != nil {
+		return fmt.Errorf("could not save project state: %w", err)
+	}
+
+	if cfg := configs["apimetrics"]; cfg != nil {
+		if p := cfg.Profiles["default"]; p != nil {
+			if p.Headers == nil {
+				p.Headers = map[string]string{}
+			}
+			p.Headers["Apimetrics-Project-Id"] = id
+		}
+	}
+
+	var display string
+	switch {
+	case orgName != "" && projectName != "":
+		display = orgName + " / " + projectName
+	case projectName != "":
+		display = projectName
+	default:
+		display = id
+	}
+	fmt.Fprintf(Stdout, "Active project set to %s\n\n", display)
+	return nil
+}
+
+func ensureProject(cmd *cobra.Command) error {
+	if !cmd.Runnable() {
+		return nil
+	}
+
+	name := cmd.Name()
+	if name == "login" || name == "logout" ||
+		strings.HasPrefix(name, "__") || name == "completion" {
+		return nil
+	}
+	if cmd.Parent() != nil && cmd.Parent().Name() == "project" {
+		return nil
+	}
+
+	return selectProjectIfUnset()
+}
+
 func loginCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
@@ -307,7 +363,7 @@ func loginCmd() *cobra.Command {
 			}
 
 			fmt.Fprintln(Stdout, "Logged in successfully.")
-			return nil
+			return selectProjectIfUnset()
 		},
 	}
 }

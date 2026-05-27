@@ -112,9 +112,10 @@ func Init(name string, version string) {
 
   # Create a monitor
   $ %s create-monitor name: "Checkout flow", url: https://example.com/checkout`, name, name),
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			settings := viper.AllSettings()
 			LogDebug("Configuration: %v", settings)
+			return ensureProject(cmd)
 		},
 	}
 	Root.SetHelpTemplate(`{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces | highlight}}
