@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rest-sh/restish/cli"
+	"apicontext.com/apimetrics/cli"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/h2non/gock.v1"

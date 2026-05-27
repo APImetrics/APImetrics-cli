@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/rest-sh/restish/cli"
+	"apicontext.com/apimetrics/cli"
 	"github.com/spf13/afero"
 	"github.com/zeebo/xxh3"
 )

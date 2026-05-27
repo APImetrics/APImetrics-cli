@@ -3,15 +3,24 @@ package main
 import (
 	"os"
 
-	"github.com/rest-sh/restish/bulk"
-	"github.com/rest-sh/restish/cli"
-	"github.com/rest-sh/restish/oauth"
-	"github.com/rest-sh/restish/openapi"
+	"apicontext.com/apimetrics/bulk"
+	"apicontext.com/apimetrics/cli"
+	"apicontext.com/apimetrics/oauth"
+	"apicontext.com/apimetrics/openapi"
 )
 
 var version string = "dev"
 var commit string
 var date string
+
+// Build-time API configuration — override with -ldflags at build time:
+//
+//	go build -ldflags "-X main.baseURL=https://client.apimetrics.io ..."
+var baseURL = "https://qc-client.apimetrics.io"
+var authURL = "https://qc-auth.apimetrics.io/authorize"
+var tokenURL = "https://qc-auth.apimetrics.io/oauth/token"
+var authAudience = "https://client.apimetrics.io"
+var clientID = "bj0yh0AjBMzfeOpffmCj5UP8FbmYDwcM"
 
 func main() {
 	if version == "dev" {
@@ -22,7 +31,8 @@ func main() {
 		}
 	}
 
-	cli.Init("restish", version)
+	cli.SetBuildConfig(baseURL, authURL, tokenURL, authAudience, clientID)
+	cli.Init("apimetrics", version)
 
 	// Register default encodings, content type handlers, and link parsers.
 	cli.Defaults()

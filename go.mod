@@ -1,4 +1,4 @@
-module github.com/rest-sh/restish
+module apicontext.com/apimetrics
 
 go 1.24.0
 

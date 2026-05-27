@@ -1,23 +1,34 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/google/shlex"
-	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"golang.org/x/exp/maps"
 )
 
-// apis holds the per-API configuration.
-var apis *viper.Viper
+// buildCfg holds the API endpoint and auth parameters baked in at build time.
+var buildCfg struct {
+	BaseURL      string
+	AuthURL      string
+	TokenURL     string
+	AuthAudience string
+	ClientID     string
+}
+
+// SetBuildConfig sets the API endpoint and auth parameters baked in at build
+// time. Must be called before cli.Init.
+func SetBuildConfig(baseURL, authURL, tokenURL, authAudience, clientID string) {
+	buildCfg.BaseURL = baseURL
+	buildCfg.AuthURL = authURL
+	buildCfg.TokenURL = tokenURL
+	buildCfg.AuthAudience = authAudience
+	buildCfg.ClientID = clientID
+}
 
 // APIAuth describes the auth type and parameters for an API.
 type APIAuth struct {
@@ -60,215 +71,43 @@ type APIConfig struct {
 	TLS           *TLSConfig             `json:"tls,omitempty" yaml:"tls,omitempty" mapstructure:",omitempty"`
 }
 
-// Save the API configuration to disk.
-func (a APIConfig) Save() error {
-	apis.Set(a.name, a)
-	return apis.WriteConfig()
-}
-
-// Return colorized string of configuration in JSON or YAML
-func (a APIConfig) GetPrettyDisplay(outFormat string) ([]byte, error) {
-	// marshal
-	if outFormat == "auto" {
-		outFormat = "json"
-	}
-	marshalled, err := MarshalShort(outFormat, true, a)
-	if err != nil {
-		return nil, errors.New("unable to render configuration")
-	}
-
-	if !useColor {
-		return marshalled, nil
-	}
-
-	// colorize
-	marshalled, err = Highlight(outFormat, marshalled)
-	if err != nil {
-		return nil, errors.New("unable to colorize output")
-	}
-
-	return marshalled, nil
-}
+// Save is a no-op: API configuration is static, baked in at build time.
+func (a APIConfig) Save() error { return nil }
 
 type apiConfigs map[string]*APIConfig
 
 var configs apiConfigs
-var apiCommand *cobra.Command
 
 func initAPIConfig() {
-	apis = viper.New()
+	state := loadState()
 
-	apis.SetConfigName("apis")
-	apis.AddConfigPath(viper.GetString("config-directory"))
-
-	// Write a blank cache if no file is already there. Later you can use
-	// configs.SaveConfig() to write new values.
-	filename := filepath.Join(viper.GetString("config-directory"), "apis.json")
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		if err := os.WriteFile(filename, []byte("{}"), 0600); err != nil {
-			panic(err)
+	profile := &APIProfile{
+		Auth: &APIAuth{
+			Name: "oauth-authorization-code",
+			Params: map[string]string{
+				"authorize_url": buildCfg.AuthURL + "?audience=" + buildCfg.AuthAudience,
+				"token_url":     buildCfg.TokenURL,
+				"client_id":     buildCfg.ClientID,
+				"client_secret": "",
+				"redirect_url":  "",
+				"scopes":        "openid profile email",
+			},
+		},
+	}
+	if state.ProjectID != "" {
+		profile.Headers = map[string]string{
+			"Apimetrics-Project-Id": state.ProjectID,
 		}
 	}
 
-	err := apis.ReadInConfig()
-	if err != nil {
-		panic(err)
-	}
-
-	if apis.GetString("$schema") == "" {
-		// Attempt to update the config to add the schema for docs/validation.
-		apis.Set("$schema", "https://rest.sh/schemas/apis.json")
-		apis.WriteConfig()
-	}
-
-	// Register api init sub-command to register the API.
-	apiCommand = &cobra.Command{
-		GroupID: "generic",
-		Use:     "api",
-		Short:   "API management commands",
-	}
-	Root.AddCommand(apiCommand)
-
-	apiCommand.AddCommand(&cobra.Command{
-		Use:     "content-types",
-		Aliases: []string{"ct", "cts"},
-		Short:   "Show content types",
-		Long:    "Show registered content-type information",
-		Args:    cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			keys := []string{}
-			for k := range contentTypes {
-				if contentTypes[k].name != "" {
-					keys = append(keys, k)
-				}
-			}
-
-			// Sort content types by priority
-			sort.Slice(keys, func(i, j int) bool {
-				return contentTypes[keys[i]].q > contentTypes[keys[j]].q
-			})
-
-			fmt.Fprintln(Stdout, "Content types (most to least preferred):")
-			for _, k := range keys {
-				fmt.Fprintln(Stdout, contentTypes[k].name)
-			}
-
-			// Sort output formats alphabetically
-			keys = maps.Keys(contentTypes)
-			sort.Strings(keys)
-			fmt.Fprintln(Stdout, "\nOutput formats:")
-			for _, k := range keys {
-				fmt.Fprintln(Stdout, k)
-			}
+	configs = apiConfigs{
+		"apimetrics": {
+			name: "apimetrics",
+			Base: buildCfg.BaseURL,
+			Profiles: map[string]*APIProfile{
+				"default": profile,
+			},
 		},
-	})
-
-	apiCommand.AddCommand(&cobra.Command{
-		Use:     "configure short-name",
-		Aliases: []string{"config"},
-		Short:   "Initialize an API",
-		Long:    "Initializes an API with a short interactive prompt session to set up the base URI and auth if needed.",
-		Args:    cobra.MinimumNArgs(1),
-		Run:     askInitAPIDefault,
-	})
-
-	apiCommand.AddCommand(&cobra.Command{
-		Use:   "edit",
-		Short: "Edit APIs configuration",
-		Long:  "Edit the APIs configuration in your default editor.",
-		Args:  cobra.NoArgs,
-		Run:   func(cmd *cobra.Command, args []string) { editAPIs(os.Exit) },
-	})
-
-	apiCommand.AddCommand(&cobra.Command{
-		Use:   "clear-auth-cache short-name",
-		Short: "Clear API auth token cache",
-		Long:  "Clear the API auth token cache for the current profile. This will force a re-authentication the next time you make a request.",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			apiName := args[0]
-			api := configs[apiName]
-			if api == nil {
-				panic("API " + apiName + " not found")
-			}
-
-			// Remove the cache entry.
-			Cache.Set(apiName+":"+viper.GetString("rsh-profile"), "")
-
-			if err := Cache.WriteConfig(); err != nil {
-				panic(fmt.Errorf("Unable to write cache file: %w", err))
-			}
-		},
-	})
-
-	apiCommand.AddCommand(&cobra.Command{
-		Use:   "show short-name",
-		Short: "Show API config",
-		Long:  "Show an API configuration as JSON/YAML.",
-		Args:  cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			config := configs[args[0]]
-			if config == nil {
-				panic("API " + args[0] + " not found")
-			}
-
-			outFormat := viper.GetString("rsh-output-format")
-			if prettyString, err := config.GetPrettyDisplay(outFormat); err == nil {
-				Stdout.Write(prettyString)
-			} else {
-				panic(err)
-			}
-		},
-	})
-
-	apiCommand.AddCommand(&cobra.Command{
-		Use:   "sync short-name",
-		Short: "Sync an API",
-		Long:  "Force-fetch the latest API description and update the local cache.",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			viper.Set("rsh-no-cache", true)
-			_, err := Load(fixAddress(args[0]), Root)
-			if err != nil {
-				panic(err)
-			}
-		},
-	})
-
-	// Register API sub-commands
-	configs = apiConfigs{}
-	tmp := viper.New()
-	for k, v := range apis.AllSettings() {
-		if k == "$schema" {
-			continue
-		}
-		tmp.Set(k, v)
-	}
-	if err := tmp.Unmarshal(&configs); err != nil {
-		panic(err)
-	}
-
-	seen := map[string]bool{}
-	for apiName, config := range configs {
-		func(config *APIConfig) {
-			if seen[config.Base] {
-				panic(fmt.Errorf("multiple APIs configured with the same base URL: %s", config.Base))
-			}
-			seen[config.Base] = true
-			config.name = apiName
-			configs[apiName] = config
-
-			n := apiName
-			cmd := &cobra.Command{
-				GroupID: "api",
-				Use:     n,
-				Short:   config.Base,
-				Run: func(cmd *cobra.Command, args []string) {
-					cmd.Help()
-				},
-			}
-			Root.AddCommand(cmd)
-		}(config)
 	}
 }
 
@@ -276,7 +115,7 @@ func findAPI(uri string) (string, *APIConfig) {
 	apiName := viper.GetString("api-name")
 
 	for name, config := range configs {
-		// fixes https://github.com/rest-sh/restish/issues/128
+		// fixes https://apicontext.com/apimetrics/issues/128
 		if len(apiName) > 0 && name != apiName {
 			continue
 		}

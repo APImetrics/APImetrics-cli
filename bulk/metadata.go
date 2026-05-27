@@ -14,7 +14,7 @@ import (
 
 	"github.com/danielgtaylor/shorthand/v2"
 	"github.com/logrusorgru/aurora"
-	"github.com/rest-sh/restish/cli"
+	"apicontext.com/apimetrics/cli"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"

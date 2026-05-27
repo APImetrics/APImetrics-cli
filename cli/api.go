@@ -18,11 +18,16 @@ import (
 	"golang.org/x/text/language"
 )
 
+// LoadedAPI is the API loaded at startup, available after Run() has completed
+// its loading step. Useful for custom commands that need to resolve operation
+// URI templates without hardcoding paths.
+var LoadedAPI API
+
 // API represents an abstracted API description used to build CLI commands
 // around available resources, operations, and links. An API is produced by
 // a Loader and cached by the CLI in-between runs when possible.
 type API struct {
-	RestishVersion string      `json:"restish_version" yaml:"restish_version"`
+	CLIVersion     string      `json:"cli_version" yaml:"cli_version"`
 	Short          string      `json:"short" yaml:"short"`
 	Long           string      `json:"long,omitempty" yaml:"long,omitempty"`
 	Operations     []Operation `json:"operations,omitempty" yaml:"operations,omitempty"`
@@ -134,7 +139,7 @@ func Load(entrypoint string, root *cobra.Command) (API, error) {
 		filename := filepath.Join(getCacheDir(), name+".cbor")
 		if data, err := os.ReadFile(filename); err == nil {
 			if err := cbor.Unmarshal(data, &cached); err == nil {
-				if cached.RestishVersion == root.Version {
+				if cached.CLIVersion == root.Version {
 					setupRootFromAPI(root, &cached)
 					return cached, nil
 				}
@@ -188,7 +193,7 @@ func Load(entrypoint string, root *cobra.Command) (API, error) {
 		}
 
 		if found {
-			desc.RestishVersion = root.Version
+			desc.CLIVersion = root.Version
 			cacheAPI(name, &desc)
 			return desc, nil
 		}
