@@ -11,7 +11,7 @@ description: >
 ### 1. Create the browser monitor
 
 ```bash
-apimetrics browser-monitors create \
+apimetrics create-browser-monitor \
   --name "<monitor-name>" \
   --url "<target-url>"
 ```
@@ -20,23 +20,23 @@ Save the returned monitor ID — used in all subsequent steps.
 
 Optional flags:
 - `--description` — human-readable description
-- `--browser-types` — comma-separated list of browsers to run on
+- `--browser-types` — browsers the monitor is permitted to run on
 - `--tags` — tags for grouping (repeatable)
 - `--user-agent` — override the User-Agent header
 - `--workspace` — workspace ID if using workspaces
 
-**Validation gate:** Response must contain an `id` field. If creation fails with 400, confirm `--name` and `--url` are both present and that `--url` is a valid URL.
+**Validation gate:** Response must contain an `id` field. If creation fails with 400, confirm `--name` and `--url` are both present and that `--url` includes the scheme (`https://`).
 
 ### 2. Attach a schedule
 
 **Option A — attach to an existing schedule:**
 ```bash
-apimetrics schedules add-call-to --schedule-id <schedule-id> --target-id <monitor-id>
+apimetrics add-call-to-schedule --schedule-id <schedule-id> --target-id <monitor-id>
 ```
 
 **Option B — create a new schedule with the monitor already attached:**
 ```bash
-apimetrics schedules create \
+apimetrics create-schedule \
   --name "<schedule-name>" \
   --frequency 300 \
   --targets <monitor-id>
@@ -49,7 +49,7 @@ apimetrics schedules create \
 ### 3. Run the monitor on-demand
 
 ```bash
-apimetrics monitors run --monitor-id <monitor-id>
+apimetrics run-monitor --monitor-id <monitor-id>
 ```
 
 Save the `result_id` from the response — used in the next step.
@@ -59,14 +59,14 @@ Save the `result_id` from the response — used in the next step.
 ### 4. Poll result to verify
 
 ```bash
-apimetrics results get-result-content --result-id <result-id> --path /
+apimetrics get-result-content --result-id <result-id> --path /
 ```
 
-Poll until the result is available (typically within 60 seconds for browser monitors). A successful result has no error and a completed status.
+Poll until the result is available (typically within 60 seconds for browser monitors). Wait 10–15 seconds between checks.
 
 To get a screenshot of the page at the time of the run:
 ```bash
-apimetrics results get-result-screenshot --result-id <result-id>
+apimetrics get-result-screenshot --result-id <result-id>
 ```
 
 **Validation gate:** Confirm the result shows a successful page load with no errors. If the result shows a failure, inspect the error message and screenshot for details.
@@ -80,7 +80,7 @@ apimetrics results get-result-screenshot --result-id <result-id>
 
 ## Error recovery
 
-- **400 on create:** Missing required fields. Confirm `--name` and `--url` are both provided and that the URL includes the scheme (`https://`).
-- **401/403:** Confirm `--api-key` or `--apimetrics-project-id` is set, or that environment variable `APIMETRICS_APIMETRICS_PROJECT_ID` is configured.
-- **No result after 120s:** Browser monitors may take longer in high-load periods. Check the monitor status via `apimetrics browser-monitors read --monitor-id <id>` and retry the run.
-- **Screenshot unavailable:** Not all result types include screenshots. Fall back to inspecting result content via `get-result-content`.
+- **400 on create:** Confirm `--name` and `--url` are both provided and that the URL includes the scheme (`https://`).
+- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project` to check the active project.
+- **No result after 120s:** Browser monitors may take longer in high-load periods. Check the monitor with `apimetrics read-browser-monitor --monitor-id <id>` and retry.
+- **Screenshot unavailable:** Not all result types include screenshots. Fall back to `get-result-content`.

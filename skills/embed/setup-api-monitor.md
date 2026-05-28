@@ -11,7 +11,7 @@ description: >
 ### 1. Create the API monitor
 
 ```bash
-apimetrics calls create --body '{
+apimetrics create-call --body '{
   "meta": {
     "name": "<monitor-name>"
   },
@@ -19,14 +19,14 @@ apimetrics calls create --body '{
     "method": "GET",
     "url": "<target-url>"
   }
-}' --jq '.id'
+}'
 ```
 
-Save the returned `id` — this is the call ID used in all subsequent steps.
+Save the returned `id` — used in all subsequent steps.
 
 To add request headers or auth:
 ```bash
-apimetrics calls create --body '{
+apimetrics create-call --body '{
   "meta": { "name": "<monitor-name>" },
   "request": {
     "method": "GET",
@@ -37,18 +37,18 @@ apimetrics calls create --body '{
 }'
 ```
 
-**Validation gate:** Response must contain an `id` field. If the call creation fails with 400, check that `meta.name` and `request.url` and `request.method` are all present.
+**Validation gate:** Response must contain an `id` field. If creation fails with 400, check that `meta.name`, `request.url`, and `request.method` are all present.
 
 ### 2. Attach a schedule
 
 **Option A — attach to an existing schedule:**
 ```bash
-apimetrics schedules add-call-to --schedule-id <schedule-id> --target-id <call-id>
+apimetrics add-call-to-schedule --schedule-id <schedule-id> --target-id <call-id>
 ```
 
 **Option B — create a new schedule with the monitor already attached:**
 ```bash
-apimetrics schedules create \
+apimetrics create-schedule \
   --name "<schedule-name>" \
   --frequency 300 \
   --targets <call-id>
@@ -61,42 +61,36 @@ apimetrics schedules create \
 ### 3. Run the monitor on-demand
 
 ```bash
-apimetrics calls run <call-id>
+apimetrics run-call <call-id>
 ```
 
 The response contains a `result_id`. Save it for the next step.
-
-To run from a specific location:
-```bash
-apimetrics calls run <call-id> --body '{"location_id": "<location-id>"}'
-```
 
 **Validation gate:** Response must contain `result_id`. A 422 response means the project is out of quota.
 
 ### 4. Poll results to verify
 
 ```bash
-apimetrics calls list-results <call-id> --jq '.results[0]'
+apimetrics list-call-results <call-id>
 ```
 
-A successful result has `result.success: true` and an HTTP status code in the 2xx range. Poll this command until the result from step 3 appears (match by `result_id`).
+A successful result has `result.success: true` and an HTTP status code in the 2xx range. Poll until the result from step 3 appears (match by `result_id`). Use `--rsh-filter` to narrow output:
 
-To fetch a specific result directly:
 ```bash
-apimetrics results get-result-content --result-id <result-id> --path /
+apimetrics list-call-results <call-id> -f body.results[0]
 ```
 
 **Validation gate:** Confirm `result.success` is `true`. If `false`, inspect `result.failure_reason` and the response body for details.
 
 ## Hard rules
 
-- Always verify the monitor ID before attaching to a schedule — attaching the wrong ID silently succeeds.
+- Always verify the call ID before attaching to a schedule — attaching the wrong ID silently succeeds.
 - Do not poll results in a tight loop. Wait 5–10 seconds between checks; on-demand runs typically complete within 30 seconds.
 - `--frequency` on schedules is in seconds, not minutes.
 
 ## Error recovery
 
 - **400 on create:** Missing required fields. Check `meta.name`, `request.url`, and `request.method` are all present and non-empty.
-- **401/403:** Confirm `--api-key` or `--apimetrics-project-id` is set, or that environment variable `APIMETRICS_APIMETRICS_PROJECT_ID` is configured.
+- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project` to check the active project.
 - **422 on run:** Project is out of quota. Check billing or reduce monitor frequency.
-- **No result after 60s:** The run may have been queued behind other runs. Increase wait time or check monitor status in the dashboard.
+- **No result after 60s:** The run may be queued behind other runs. Increase wait time or check monitor status.

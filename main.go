@@ -7,6 +7,7 @@ import (
 	"apicontext.com/apimetrics/cli"
 	"apicontext.com/apimetrics/oauth"
 	"apicontext.com/apimetrics/openapi"
+	"apicontext.com/apimetrics/skills"
 )
 
 var version string = "dev"
@@ -38,6 +39,7 @@ func main() {
 	cli.Defaults()
 
 	bulk.Init(cli.Root)
+	skills.Init(cli.Root)
 
 	// Register format loaders to auto-discover API descriptions
 	cli.AddLoader(openapi.New())
