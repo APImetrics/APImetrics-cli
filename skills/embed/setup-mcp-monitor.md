@@ -6,45 +6,77 @@ description: >
   Use when asked to create, configure, or test an MCP monitor.
 ---
 
+## Input format
+
+All `apimetrics` create commands read JSON from stdin. Use heredoc syntax:
+
+```bash
+apimetrics create-mcp-monitor <<'EOF'
+{ ... }
+EOF
+```
+
+There is no `--body`, `--data`, or `-d` flag on any `apimetrics` command.
+
 ## Steps
 
 ### 1. Create the MCP monitor
 
 ```bash
-apimetrics create-mcp-monitor \
-  --name "<monitor-name>" \
-  --url "<mcp-server-url>"
+apimetrics create-mcp-monitor <<'EOF'
+{
+  "name": "<monitor-name>",
+  "url": "<mcp-server-url>"
+}
+EOF
 ```
 
-Save the returned monitor ID — used in all subsequent steps.
+Save the returned `id` — used in all subsequent steps.
 
-Optional flags:
-- `--steps` — steps to execute during the MCP session
-- `--auth-id` — Auth Settings ID if the MCP server requires authentication
-- `--token-id` — Auth Token ID for token-based auth
-- `--overall-timeout-ms` — session timeout in milliseconds (default: 30000)
-- `--description` — human-readable description
-- `--tags` — tags for grouping (repeatable)
-- `--workspace` — workspace ID if using workspaces
+Optional fields:
+- `"steps"` — steps to execute during the MCP session
+- `"auth_id"` — Auth Settings ID if the MCP server requires authentication
+- `"token_id"` — Auth Token ID for token-based auth
+- `"overall_timeout_ms"` — session timeout in milliseconds (default: 30000)
+- `"description"` — human-readable description
+- `"tags"` — list of tags for grouping
+- `"workspace"` — workspace ID if using workspaces
 
 Example with steps:
 ```bash
-apimetrics create-mcp-monitor \
-  --name "Check tools endpoint" \
-  --url "https://mcp.example.com/sse" \
-  --steps "<steps-definition>"
+apimetrics create-mcp-monitor <<'EOF'
+{
+  "name": "Check tools endpoint",
+  "url": "https://mcp.example.com/sse",
+  "steps": [{"step_type": "list_tools", "timeout_ms": 10000}]
+}
+EOF
 ```
 
-**Validation gate:** Response must contain an `id` field. If creation fails with 400, confirm `--name` and `--url` are both present and that the URL points to a reachable MCP SSE endpoint.
+**Validation gate:** Response must contain an `id` field. If creation fails with 400, confirm `name` and `url` are both present and that the URL points to a reachable MCP SSE endpoint.
 
 ### 2. Attach a schedule
 
-**Option A — attach to an existing schedule:**
+Always offer scheduling after creating the monitor, unless the user has explicitly said they do not want one.
+
+First, list existing schedules so the user can choose:
+```bash
+apimetrics list-schedules
+```
+
+Present the options to the user:
+- Attach to one of the existing schedules
+- Create a new schedule and attach this monitor to it
+- Skip scheduling for now
+
+Wait for the user's choice before proceeding.
+
+**To attach to an existing schedule:**
 ```bash
 apimetrics add-call-to-schedule --schedule-id <schedule-id> --target-id <monitor-id>
 ```
 
-**Option B — create a new schedule with the monitor already attached:**
+**To create a new schedule:**
 ```bash
 apimetrics create-schedule \
   --name "<schedule-name>" \
@@ -72,22 +104,22 @@ Save the `result_id` from the response — used in the next step.
 apimetrics get-result-content --result-id <result-id> --path /
 ```
 
-Poll until the result is available. Allow up to the `--overall-timeout-ms` value plus processing time. Wait 10–15 seconds between checks.
+Poll until the result is available. Allow up to the `overall_timeout_ms` value plus processing time. Wait 10–15 seconds between checks.
 
 **Validation gate:** Confirm the result shows a successful session with no errors. Common failure causes: unreachable server, auth failure, or a step that did not return the expected tool response.
 
 ## Hard rules
 
 - Always verify the monitor ID before attaching to a schedule — attaching the wrong ID silently succeeds.
-- MCP monitor runs are bounded by `--overall-timeout-ms`. Sessions exceeding this limit are terminated and reported as failures.
+- MCP monitor runs are bounded by `overall_timeout_ms`. Sessions exceeding this limit are terminated and reported as failures.
 - Do not poll results in a tight loop. Wait 10–15 seconds between checks.
 - `--frequency` on schedules is in seconds, not minutes.
-- The `--url` must be an SSE endpoint, not a plain HTTP endpoint.
+- The `url` must be an SSE endpoint, not a plain HTTP endpoint.
 
 ## Error recovery
 
-- **400 on create:** Confirm `--name` and `--url` are both provided and that the URL is a valid SSE endpoint.
-- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project` to check the active project. If the MCP server itself requires auth, ensure `--auth-id` or `--token-id` is set.
-- **Session timeout failures:** Increase `--overall-timeout-ms` via `apimetrics update-mcp-monitor` and re-run.
+- **400 on create:** Confirm `name` and `url` are both provided and that the URL is a valid SSE endpoint.
+- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project` to check the active project.
+- **Session timeout failures:** Increase `overall_timeout_ms` and re-run.
 - **422 on run:** Project is out of quota. Check billing or reduce monitor frequency.
 - **No result after 120s:** Verify the MCP server URL is reachable before retrying.

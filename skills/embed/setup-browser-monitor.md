@@ -6,35 +6,64 @@ description: >
   Use when asked to create, configure, or test a browser monitor.
 ---
 
+## Input format
+
+All `apimetrics` create commands read JSON from stdin. Use heredoc syntax:
+
+```bash
+apimetrics create-browser-monitor <<'EOF'
+{ ... }
+EOF
+```
+
+There is no `--body`, `--data`, or `-d` flag on any `apimetrics` command.
+
 ## Steps
 
 ### 1. Create the browser monitor
 
 ```bash
-apimetrics create-browser-monitor \
-  --name "<monitor-name>" \
-  --url "<target-url>"
+apimetrics create-browser-monitor <<'EOF'
+{
+  "name": "<monitor-name>",
+  "url": "<target-url>"
+}
+EOF
 ```
 
-Save the returned monitor ID — used in all subsequent steps.
+Save the returned `id` — used in all subsequent steps.
 
-Optional flags:
-- `--description` — human-readable description
-- `--browser-types` — browsers the monitor is permitted to run on
-- `--tags` — tags for grouping (repeatable)
-- `--user-agent` — override the User-Agent header
-- `--workspace` — workspace ID if using workspaces
+Optional fields:
+- `"description"` — human-readable description
+- `"browser_types"` — list of browsers the monitor is permitted to run on
+- `"tags"` — list of tags for grouping
+- `"user_agent"` — override the User-Agent header
+- `"workspace"` — workspace ID if using workspaces
 
-**Validation gate:** Response must contain an `id` field. If creation fails with 400, confirm `--name` and `--url` are both present and that `--url` includes the scheme (`https://`).
+**Validation gate:** Response must contain an `id` field. If creation fails with 400, confirm `name` and `url` are both present and that `url` includes the scheme (`https://`).
 
 ### 2. Attach a schedule
 
-**Option A — attach to an existing schedule:**
+Always offer scheduling after creating the monitor, unless the user has explicitly said they do not want one.
+
+First, list existing schedules so the user can choose:
+```bash
+apimetrics list-schedules
+```
+
+Present the options to the user:
+- Attach to one of the existing schedules
+- Create a new schedule and attach this monitor to it
+- Skip scheduling for now
+
+Wait for the user's choice before proceeding.
+
+**To attach to an existing schedule:**
 ```bash
 apimetrics add-call-to-schedule --schedule-id <schedule-id> --target-id <monitor-id>
 ```
 
-**Option B — create a new schedule with the monitor already attached:**
+**To create a new schedule:**
 ```bash
 apimetrics create-schedule \
   --name "<schedule-name>" \
@@ -69,7 +98,7 @@ To get a screenshot of the page at the time of the run:
 apimetrics get-result-screenshot --result-id <result-id>
 ```
 
-**Validation gate:** Confirm the result shows a successful page load with no errors. If the result shows a failure, inspect the error message and screenshot for details.
+**Validation gate:** Confirm the result shows a successful page load with no errors.
 
 ## Hard rules
 
@@ -80,7 +109,7 @@ apimetrics get-result-screenshot --result-id <result-id>
 
 ## Error recovery
 
-- **400 on create:** Confirm `--name` and `--url` are both provided and that the URL includes the scheme (`https://`).
+- **400 on create:** Confirm `name` and `url` are both provided and that the URL includes the scheme (`https://`).
 - **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project` to check the active project.
 - **No result after 120s:** Browser monitors may take longer in high-load periods. Check the monitor with `apimetrics read-browser-monitor --monitor-id <id>` and retry.
 - **Screenshot unavailable:** Not all result types include screenshots. Fall back to `get-result-content`.

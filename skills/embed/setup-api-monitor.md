@@ -6,12 +6,25 @@ description: >
   Use when asked to create, configure, or test an API monitor or API call.
 ---
 
+## Input format
+
+All `apimetrics` create commands read JSON from stdin. Use heredoc syntax:
+
+```bash
+apimetrics create-call <<'EOF'
+{ ... }
+EOF
+```
+
+There is no `--body`, `--data`, or `-d` flag on any `apimetrics` command.
+
 ## Steps
 
 ### 1. Create the API monitor
 
 ```bash
-apimetrics create-call --body '{
+apimetrics create-call <<'EOF'
+{
   "meta": {
     "name": "<monitor-name>"
   },
@@ -19,14 +32,16 @@ apimetrics create-call --body '{
     "method": "GET",
     "url": "<target-url>"
   }
-}'
+}
+EOF
 ```
 
 Save the returned `id` — used in all subsequent steps.
 
 To add request headers or auth:
 ```bash
-apimetrics create-call --body '{
+apimetrics create-call <<'EOF'
+{
   "meta": { "name": "<monitor-name>" },
   "request": {
     "method": "GET",
@@ -34,19 +49,34 @@ apimetrics create-call --body '{
     "headers": [{"key": "Accept", "value": "application/json"}],
     "auth_id": "<auth-settings-id>"
   }
-}'
+}
+EOF
 ```
 
 **Validation gate:** Response must contain an `id` field. If creation fails with 400, check that `meta.name`, `request.url`, and `request.method` are all present.
 
 ### 2. Attach a schedule
 
-**Option A — attach to an existing schedule:**
+Always offer scheduling after creating the monitor, unless the user has explicitly said they do not want one.
+
+First, list existing schedules so the user can choose:
+```bash
+apimetrics list-schedules
+```
+
+Present the options to the user:
+- Attach to one of the existing schedules
+- Create a new schedule and attach this monitor to it
+- Skip scheduling for now
+
+Wait for the user's choice before proceeding.
+
+**To attach to an existing schedule:**
 ```bash
 apimetrics add-call-to-schedule --schedule-id <schedule-id> --target-id <call-id>
 ```
 
-**Option B — create a new schedule with the monitor already attached:**
+**To create a new schedule:**
 ```bash
 apimetrics create-schedule \
   --name "<schedule-name>" \
@@ -56,7 +86,7 @@ apimetrics create-schedule \
 
 `--frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
 
-**Validation gate:** For option A, a 200 response confirms the target was added. For option B, confirm the returned schedule includes the call ID in its targets.
+**Validation gate:** Confirm the schedule lists the monitor ID in its targets before proceeding.
 
 ### 3. Run the monitor on-demand
 
@@ -74,7 +104,7 @@ The response contains a `result_id`. Save it for the next step.
 apimetrics list-call-results <call-id>
 ```
 
-A successful result has `result.success: true` and an HTTP status code in the 2xx range. Poll until the result from step 3 appears (match by `result_id`). Use `--rsh-filter` to narrow output:
+A successful result has `result.success: true` and an HTTP status code in the 2xx range. Poll until the result from step 3 appears (match by `result_id`). Use `-f` to narrow output:
 
 ```bash
 apimetrics list-call-results <call-id> -f body.results[0]
