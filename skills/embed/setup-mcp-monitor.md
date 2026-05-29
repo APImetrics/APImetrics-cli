@@ -119,7 +119,7 @@ Poll until the result is available. Allow up to the `overall_timeout_ms` value p
 ## Error recovery
 
 - **400 on create:** Confirm `name` and `url` are both provided and that the URL is a valid SSE endpoint.
-- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project` to check the active project.
+- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project show` to check the active project.
 - **Session timeout failures:** Increase `overall_timeout_ms` and re-run.
 - **422 on run:** Project is out of quota. Check billing or reduce monitor frequency.
 - **No result after 120s:** Verify the MCP server URL is reachable before retrying.
