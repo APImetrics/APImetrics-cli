@@ -366,6 +366,9 @@ func Run() (returnErr error) {
 		if p := cfg.Profiles[profile]; p != nil && p.Base != "" {
 			currentBase = p.Base
 		}
+		if currentBase == "" {
+			continue
+		}
 		api, err := Load(currentBase, Root)
 		if err != nil {
 			panic(err)

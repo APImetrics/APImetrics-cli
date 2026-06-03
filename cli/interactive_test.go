@@ -40,6 +40,7 @@ func TestInteractive(t *testing.T) {
 	os.Remove(filepath.Join(getConfigDir("test"), "cache.json"))
 
 	reset(false)
+	AddAuth("http-basic", &BasicAuth{})
 
 	defer gock.Off()
 

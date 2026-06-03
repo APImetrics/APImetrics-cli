@@ -129,11 +129,11 @@ func findAPI(uri string) (string, *APIConfig) {
 				if strings.HasPrefix(uri, config.Profiles[profile].Base) {
 					return name, config
 				}
-			} else if strings.HasPrefix(uri, config.Base) {
+			} else if config.Base != "" && strings.HasPrefix(uri, config.Base) {
 				return name, config
 			}
 		} else {
-			if strings.HasPrefix(uri, config.Base) {
+			if config.Base != "" && strings.HasPrefix(uri, config.Base) {
 				// TODO: find the longest matching base?
 				return name, config
 			}

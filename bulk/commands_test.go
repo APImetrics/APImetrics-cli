@@ -127,6 +127,7 @@ func TestWorkflow(t *testing.T) {
 	cli.Init("test", "1.0.0")
 	cli.Defaults()
 	Init(cli.Root)
+	require.NoError(t, cli.SaveState(cli.State{ProjectID: "test-project"}))
 
 	// Init
 	// ====
@@ -377,6 +378,7 @@ func TestPullFailure(t *testing.T) {
 	cli.Init("test", "1.0.0")
 	cli.Defaults()
 	Init(cli.Root)
+	require.NoError(t, cli.SaveState(cli.State{ProjectID: "test-project"}))
 
 	// Init
 	// ====
@@ -423,6 +425,7 @@ func TestPushFailure(t *testing.T) {
 	cli.Init("test", "1.0.0")
 	cli.Defaults()
 	Init(cli.Root)
+	require.NoError(t, cli.SaveState(cli.State{ProjectID: "test-project"}))
 
 	// Init
 	// ====

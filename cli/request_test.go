@@ -72,6 +72,7 @@ func (a *authHookFailure) OnRequest(req *http.Request, key string, params map[st
 
 func TestAuthHookFailure(t *testing.T) {
 	configs["auth-hook-fail"] = &APIConfig{
+		Base: "http://auth-hook-fail.example.com",
 		Profiles: map[string]*APIProfile{
 			"default": {
 				Auth: &APIAuth{
@@ -83,7 +84,7 @@ func TestAuthHookFailure(t *testing.T) {
 
 	authHandlers["hook-fail"] = &authHookFailure{}
 
-	r, _ := http.NewRequest(http.MethodGet, "/test", nil)
+	r, _ := http.NewRequest(http.MethodGet, "http://auth-hook-fail.example.com/test", nil)
 	assert.PanicsWithError(t, "some-error", func() {
 		MakeRequest(r)
 	})
@@ -170,7 +171,7 @@ func TestRequestRetryAfter(t *testing.T) {
 		Put("/").
 		Times(1).
 		Reply(http.StatusTooManyRequests).
-		SetHeader("Retry-After", time.Now().Format(http.TimeFormat))
+		SetHeader("Retry-After", time.Now().UTC().Format(http.TimeFormat))
 
 	gock.New("http://example.com").
 		Put("/").
