@@ -279,6 +279,7 @@ func Load(entrypoint string, root *cobra.Command) (API, error) {
 				}
 				api, err := load(root, *opsBase, *resolved, resp, name, l)
 				if err == nil {
+					api.CLIVersion = root.Version
 					cacheAPI(name, &api)
 				}
 				return api, err
