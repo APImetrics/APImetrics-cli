@@ -58,27 +58,33 @@ Present the options to the user:
 
 Wait for the user's choice before proceeding.
 
-**To attach to an existing schedule:**
+**To attach to an existing schedule** (both IDs are positional arguments):
 ```bash
-apimetrics add-call-to-schedule --schedule-id <schedule-id> --target-id <monitor-id>
+apimetrics add-call-to-schedule <schedule-id> <monitor-id>
 ```
 
 **To create a new schedule:**
 ```bash
-apimetrics create-schedule \
-  --name "<schedule-name>" \
-  --frequency 300 \
-  --targets <monitor-id>
+apimetrics create-schedule <<'EOF'
+{
+  "name": "<schedule-name>",
+  "frequency": 300,
+  "targets": ["<monitor-id>"]
+}
+EOF
 ```
 
-`--frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
+`frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
 
 **Validation gate:** Confirm the schedule lists the monitor ID in its targets before proceeding.
 
 ### 3. Run the monitor on-demand
 
+`run-monitor` takes the monitor ID as a positional argument and requires a JSON body:
 ```bash
-apimetrics run-monitor --monitor-id <monitor-id>
+apimetrics run-monitor <monitor-id> <<'EOF'
+{}
+EOF
 ```
 
 Save the `result_id` from the response — used in the next step.
@@ -88,28 +94,30 @@ Save the `result_id` from the response — used in the next step.
 ### 4. Poll result to verify
 
 ```bash
-apimetrics get-result-content --result-id <result-id> --path /
+apimetrics get-result <result-id>
 ```
 
-Poll until the result is available (typically within 60 seconds for browser monitors). Wait 10–15 seconds between checks.
+Poll until `result` is no longer `QUEUED`. Wait 10–15 seconds between checks (browser monitors typically complete within 60 seconds).
+
+**Validation gate:** `result` must be `PASS`. Values of `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem — inspect the response for details.
 
 To get a screenshot of the page at the time of the run:
 ```bash
-apimetrics get-result-screenshot --result-id <result-id>
+apimetrics get-result-screenshot <result-id>
 ```
-
-**Validation gate:** Confirm the result shows a successful page load with no errors.
 
 ## Hard rules
 
 - Always verify the monitor ID before attaching to a schedule — attaching the wrong ID silently succeeds.
+- `run-monitor` and `get-result` take positional arguments — do not use `--monitor-id` or `--result-id` flags.
+- `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.
 - Browser monitors take longer to complete than API monitors — wait at least 60 seconds before polling results.
 - Do not poll results in a tight loop. Wait 10–15 seconds between checks.
-- `--frequency` on schedules is in seconds, not minutes.
+- `frequency` on schedules is in seconds, not minutes.
 
 ## Error recovery
 
 - **400 on create:** Confirm `name` and `url` are both provided and that the URL includes the scheme (`https://`).
 - **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project show` to check the active project.
-- **No result after 120s:** Browser monitors may take longer in high-load periods. Check the monitor with `apimetrics read-browser-monitor --monitor-id <id>` and retry.
+- **No result after 120s:** Browser monitors may take longer in high-load periods. Check the monitor with `apimetrics read-browser-monitor <monitor-id>` and retry.
 - **Screenshot unavailable:** Not all result types include screenshots. Fall back to `get-result-content`.

@@ -71,25 +71,29 @@ Present the options to the user:
 
 Wait for the user's choice before proceeding.
 
-**To attach to an existing schedule:**
+**To attach to an existing schedule** (both IDs are positional arguments):
 ```bash
-apimetrics add-call-to-schedule --schedule-id <schedule-id> --target-id <call-id>
+apimetrics add-call-to-schedule <schedule-id> <call-id>
 ```
 
 **To create a new schedule:**
 ```bash
-apimetrics create-schedule \
-  --name "<schedule-name>" \
-  --frequency 300 \
-  --targets <call-id>
+apimetrics create-schedule <<'EOF'
+{
+  "name": "<schedule-name>",
+  "frequency": 300,
+  "targets": ["<call-id>"]
+}
+EOF
 ```
 
-`--frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
+`frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
 
 **Validation gate:** Confirm the schedule lists the monitor ID in its targets before proceeding.
 
 ### 3. Run the monitor on-demand
 
+`run-call` takes the call ID as a positional argument:
 ```bash
 apimetrics run-call <call-id>
 ```
@@ -116,7 +120,8 @@ apimetrics list-call-results <call-id> -f body.results[0]
 
 - Always verify the call ID before attaching to a schedule — attaching the wrong ID silently succeeds.
 - Do not poll results in a tight loop. Wait 5–10 seconds between checks; on-demand runs typically complete within 30 seconds.
-- `--frequency` on schedules is in seconds, not minutes.
+- `frequency` on schedules is in seconds, not minutes.
+- `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.
 
 ## Error recovery
 

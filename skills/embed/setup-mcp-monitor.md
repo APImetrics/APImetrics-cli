@@ -71,27 +71,33 @@ Present the options to the user:
 
 Wait for the user's choice before proceeding.
 
-**To attach to an existing schedule:**
+**To attach to an existing schedule** (both IDs are positional arguments):
 ```bash
-apimetrics add-call-to-schedule --schedule-id <schedule-id> --target-id <monitor-id>
+apimetrics add-call-to-schedule <schedule-id> <monitor-id>
 ```
 
 **To create a new schedule:**
 ```bash
-apimetrics create-schedule \
-  --name "<schedule-name>" \
-  --frequency 300 \
-  --targets <monitor-id>
+apimetrics create-schedule <<'EOF'
+{
+  "name": "<schedule-name>",
+  "frequency": 300,
+  "targets": ["<monitor-id>"]
+}
+EOF
 ```
 
-`--frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
+`frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
 
 **Validation gate:** Confirm the schedule lists the monitor ID in its targets before proceeding.
 
 ### 3. Run the monitor on-demand
 
+`run-monitor` takes the monitor ID as a positional argument and requires a JSON body:
 ```bash
-apimetrics run-monitor --monitor-id <monitor-id>
+apimetrics run-monitor <monitor-id> <<'EOF'
+{}
+EOF
 ```
 
 Save the `result_id` from the response — used in the next step.
@@ -101,19 +107,21 @@ Save the `result_id` from the response — used in the next step.
 ### 4. Poll result to verify
 
 ```bash
-apimetrics get-result-content --result-id <result-id> --path /
+apimetrics get-result <result-id>
 ```
 
-Poll until the result is available. Allow up to the `overall_timeout_ms` value plus processing time. Wait 10–15 seconds between checks.
+Poll until `result` is no longer `QUEUED`. Allow up to the `overall_timeout_ms` value plus processing time. Wait 10–15 seconds between checks.
 
-**Validation gate:** Confirm the result shows a successful session with no errors. Common failure causes: unreachable server, auth failure, or a step that did not return the expected tool response.
+**Validation gate:** `result` must be `PASS`. Values of `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem. Common failure causes: unreachable server, auth failure, or a step that did not return the expected tool response.
 
 ## Hard rules
 
 - Always verify the monitor ID before attaching to a schedule — attaching the wrong ID silently succeeds.
+- `run-monitor` and `get-result` take positional arguments — do not use `--monitor-id` or `--result-id` flags.
+- `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.
 - MCP monitor runs are bounded by `overall_timeout_ms`. Sessions exceeding this limit are terminated and reported as failures.
 - Do not poll results in a tight loop. Wait 10–15 seconds between checks.
-- `--frequency` on schedules is in seconds, not minutes.
+- `frequency` on schedules is in seconds, not minutes.
 - The `url` must be an SSE endpoint, not a plain HTTP endpoint.
 
 ## Error recovery
