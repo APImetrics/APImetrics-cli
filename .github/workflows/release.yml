@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - v0.*
+  workflow_dispatch:
+    inputs:
+      snapshot:
+        description: 'Run goreleaser in --snapshot mode (developer build, no publish)'
+        required: false
+        default: 'false'
+      mac_only:
+        description: 'Only run macOS signing/builds (skip Linux docker release)'
+        required: false
+        default: 'false'
 
 
 permissions:
@@ -32,18 +42,104 @@ jobs:
       - name: Set up GCP credentials
         run: echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > gcp-secret.json
 
-      - name: Run GoReleaser
+      - name: Run GoReleaser (Linux)
+        if: ${{ github.event.inputs.mac_only != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SNAPSHOT: ${{ github.event.inputs.snapshot }}
         run: |
+          set -e
+          EXTRA=""
+          if [ "$SNAPSHOT" = "true" ]; then
+            EXTRA="--snapshot"
+            echo "Running goreleaser in snapshot mode (no publish)"
+          fi
           docker run --rm \
             -v "${PWD}:/workspace" \
             -w /workspace \
             -e GITHUB_TOKEN \
             -e GOOGLE_APPLICATION_CREDENTIALS=/workspace/gcp-secret.json \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
-            release --clean --parallelism 4
+            release $EXTRA --clean --parallelism 4
 
       - name: Clean up GCP credentials
         if: always()
         run: rm -f gcp-secret.json
+
+  release-macos:
+    name: Build and sign macOS artifacts
+    runs-on: macos-latest
+    needs: release
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Check for Apple signing secrets
+        run: |
+          if [ -z "${{ secrets.APPLE_CERT_P12 }}" ]; then
+            echo "WARNING: APPLE_CERT_P12 secret not found — skipping Apple code signing for this run."
+            echo "::warning::APPLE_CERT_P12 secret not found — skipping Apple code signing for this run."
+          else
+            echo "Apple signing secrets detected; will proceed with import and signing."
+          fi
+
+      - name: Import Apple certificate and provisioning profile
+        if: ${{ secrets.APPLE_CERT_P12 != '' }}
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_PROV_PROFILE: ${{ secrets.APPLE_PROV_PROFILE }}
+        run: |
+          set -e
+          echo "$APPLE_CERT_P12" | base64 --decode > cert.p12
+          KEYCHAIN=build.keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import cert.p12 -k ~/Library/Keychains/$KEYCHAIN -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/$KEYCHAIN
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/$KEYCHAIN
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$APPLE_PROV_PROFILE" | base64 --decode > profile.mobileprovision
+          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: Install GoReleaser
+        run: |
+          brew install goreleaser/tap/goreleaser || brew upgrade goreleaser/tap/goreleaser || true
+
+      - name: Run GoReleaser (macOS)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
+          SNAPSHOT: ${{ github.event.inputs.snapshot }}
+        run: |
+          set -e
+          EXTRA=""
+          if [ "$SNAPSHOT" = "true" ]; then
+            EXTRA="--snapshot"
+            echo "Running goreleaser in snapshot mode (no publish)"
+          fi
+          goreleaser release $EXTRA --clean --parallelism 4
+
+      - name: Clean up keychain and cert
+        if: always()
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -e
+          if security list-keychains | grep -q "build.keychain"; then
+            security delete-keychain build.keychain || true
+          fi
+          rm -f cert.p12 profile.mobileprovision || true
