@@ -11,11 +11,6 @@ on:
         required: false
         type: boolean
         default: false
-      mac_only:
-        description: 'Only run macOS signing/builds (skip Linux docker release)'
-        required: false
-        type: boolean
-        default: false
 
 
 permissions:
@@ -46,14 +41,25 @@ jobs:
 
       - name: Ensure mac signing secrets for tag releases
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_PROV_PROFILE: ${{ secrets.APPLE_PROV_PROFILE }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
-          if [ -z "${{ secrets.APPLE_CERT_P12 }}" ]; then
-            echo "::error::APPLE_CERT_P12 secret not configured; refusing to publish unsigned macOS artifacts on tag push."
+          missing=0
+          for var_name in APPLE_CERT_P12 APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD APPLE_PROV_PROFILE APPLE_SIGNING_IDENTITY; do
+            if [ -z "${!var_name}" ]; then
+              echo "::error::$var_name secret not configured; refusing to publish unsigned macOS artifacts on tag push."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
             exit 1
           fi
 
       - name: Run GoReleaser (Linux)
-        if: ${{ github.event.inputs.mac_only != true }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SNAPSHOT: ${{ github.event.inputs.snapshot }}
@@ -73,7 +79,7 @@ jobs:
             release $EXTRA --clean --parallelism 4
 
       - name: Upload macOS artifacts for signing
-        if: ${{ github.event.inputs.snapshot != true && github.event.inputs.mac_only != true }}
+        if: ${{ github.event.inputs.snapshot != true }}
         uses: actions/upload-artifact@v4
         with:
           name: macos-release-artifacts
@@ -125,11 +131,18 @@ jobs:
           APPLE_PROV_PROFILE: ${{ secrets.APPLE_PROV_PROFILE }}
         run: |
           set -e
+          for var_name in APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD APPLE_PROV_PROFILE; do
+            if [ -z "${!var_name}" ]; then
+              echo "::error::$var_name is required when APPLE_CERT_P12 is configured."
+              exit 1
+            fi
+          done
+
           # Decode .p12 (supports both GNU and BSD base64)
-          if echo "$APPLE_CERT_P12" | base64 --decode >/dev/null 2>&1; then
-            echo "$APPLE_CERT_P12" | base64 --decode > cert.p12
+          if printf '%s' "$APPLE_CERT_P12" | base64 --decode >/dev/null 2>&1; then
+            printf '%s' "$APPLE_CERT_P12" | base64 --decode > cert.p12
           else
-            echo "$APPLE_CERT_P12" | base64 -D > cert.p12
+            printf '%s' "$APPLE_CERT_P12" | base64 -D > cert.p12
           fi
 
           # Use a keychain in the runner temp directory and reference it explicitly
@@ -141,24 +154,25 @@ jobs:
 
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           # Decode provisioning profile (BSD/GNU compatible)
-          if echo "$APPLE_PROV_PROFILE" | base64 --decode >/dev/null 2>&1; then
-            echo "$APPLE_PROV_PROFILE" | base64 --decode > profile.mobileprovision
+          if printf '%s' "$APPLE_PROV_PROFILE" | base64 --decode >/dev/null 2>&1; then
+            printf '%s' "$APPLE_PROV_PROFILE" | base64 --decode > profile.mobileprovision
           else
-            echo "$APPLE_PROV_PROFILE" | base64 -D > profile.mobileprovision
+            printf '%s' "$APPLE_PROV_PROFILE" | base64 -D > profile.mobileprovision
           fi
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: Download macOS artifacts
-        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' && github.event.inputs.mac_only != true }}
+        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
         uses: actions/download-artifact@v4
         with:
           name: macos-release-artifacts
           path: dist
 
       - name: Sign macOS artifacts
-        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' && github.event.inputs.mac_only != true }}
+        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
         run: |
           set -e
           if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
@@ -176,7 +190,7 @@ jobs:
             tar -xzf "$archive" -C "$tmpdir"
 
             while IFS= read -r -d '' bin; do
-              codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$bin"
+              codesign --force --options runtime --timestamp --keychain "$KEYCHAIN_PATH" --sign "$APPLE_SIGNING_IDENTITY" "$bin"
             done < <(find "$tmpdir" -type f -perm -111 -print0)
 
             tar -czf "${archive}.signed" -C "$tmpdir" .
@@ -191,7 +205,7 @@ jobs:
           done
 
       - name: Upload signed macOS artifacts
-        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' && github.event.inputs.mac_only != true }}
+        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: macos-signed-artifacts
@@ -202,7 +216,7 @@ jobs:
             dist/checksums.txt
 
       - name: Replace macOS assets on GitHub release
-        if: ${{ startsWith(github.ref, 'refs/tags/') && github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' && github.event.inputs.mac_only != true }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
