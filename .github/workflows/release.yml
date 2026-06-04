@@ -40,7 +40,7 @@ jobs:
         run: echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > gcp-secret.json
 
       - name: Ensure mac signing secrets for tag releases
-        if: startsWith(github.ref, 'refs/tags/')
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
         env:
           APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
@@ -62,13 +62,17 @@ jobs:
       - name: Run GoReleaser (Linux)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SNAPSHOT: ${{ github.event.inputs.snapshot }}
+          SNAPSHOT: ${{ inputs.snapshot }}
         run: |
           set -e
           EXTRA=""
+          DRAFT=""
           if [ "$SNAPSHOT" = "true" ]; then
             EXTRA="--snapshot"
             echo "Running goreleaser in snapshot mode (no publish)"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            DRAFT="--draft"
+            echo "Creating draft release until macOS artifacts are signed"
           fi
           docker run --rm \
             -v "${PWD}:/workspace" \
@@ -76,10 +80,10 @@ jobs:
             -e GITHUB_TOKEN \
             -e GOOGLE_APPLICATION_CREDENTIALS=/workspace/gcp-secret.json \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
-            release $EXTRA --clean --parallelism 4
+            release $EXTRA $DRAFT --clean --parallelism 4
 
       - name: Upload macOS artifacts for signing
-        if: ${{ github.event.inputs.snapshot != true }}
+        if: ${{ inputs.snapshot != true }}
         uses: actions/upload-artifact@v4
         with:
           name: macos-release-artifacts
@@ -162,14 +166,14 @@ jobs:
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: Download macOS artifacts
-        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        if: ${{ inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
         uses: actions/download-artifact@v4
         with:
           name: macos-release-artifacts
           path: dist
 
       - name: Sign macOS artifacts
-        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        if: ${{ inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
@@ -205,7 +209,7 @@ jobs:
           done
 
       - name: Upload signed macOS artifacts
-        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        if: ${{ inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: macos-signed-artifacts
@@ -216,7 +220,7 @@ jobs:
             dist/checksums.txt
 
       - name: Replace macOS assets on GitHub release
-        if: ${{ startsWith(github.ref, 'refs/tags/') && github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -226,6 +230,14 @@ jobs:
             dist/*-darwin-arm64.tar.gz \
             dist/checksums.txt \
             --clobber
+
+      - name: Publish finalized GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release edit "$GITHUB_REF_NAME" --draft=false
 
       - name: Clean up keychain and cert
         if: always()
