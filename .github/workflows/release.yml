@@ -9,11 +9,13 @@ on:
       snapshot:
         description: 'Run goreleaser in --snapshot mode (developer build, no publish)'
         required: false
-        default: 'false'
+        type: boolean
+        default: false
       mac_only:
         description: 'Only run macOS signing/builds (skip Linux docker release)'
         required: false
-        default: 'false'
+        type: boolean
+        default: false
 
 
 permissions:
@@ -42,8 +44,16 @@ jobs:
       - name: Set up GCP credentials
         run: echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > gcp-secret.json
 
+      - name: Ensure mac signing secrets for tag releases
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if [ -z "${{ secrets.APPLE_CERT_P12 }}" ]; then
+            echo "::error::APPLE_CERT_P12 secret not configured; refusing to publish unsigned macOS artifacts on tag push."
+            exit 1
+          fi
+
       - name: Run GoReleaser (Linux)
-        if: ${{ github.event.inputs.mac_only != 'true' }}
+        if: ${{ github.event.inputs.mac_only != true }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SNAPSHOT: ${{ github.event.inputs.snapshot }}
@@ -104,19 +114,35 @@ jobs:
           APPLE_PROV_PROFILE: ${{ secrets.APPLE_PROV_PROFILE }}
         run: |
           set -e
-          echo "$APPLE_CERT_P12" | base64 --decode > cert.p12
-          KEYCHAIN=build.keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import cert.p12 -k ~/Library/Keychains/$KEYCHAIN -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/$KEYCHAIN
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/$KEYCHAIN
+          # Decode .p12 (supports both GNU and BSD base64)
+          if echo "$APPLE_CERT_P12" | base64 --decode >/dev/null 2>&1; then
+            echo "$APPLE_CERT_P12" | base64 --decode > cert.p12
+          else
+            echo "$APPLE_CERT_P12" | base64 -D > cert.p12
+          fi
+
+          # Use a keychain in the runner temp directory and reference it explicitly
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import cert.p12 -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$APPLE_PROV_PROFILE" | base64 --decode > profile.mobileprovision
+          # Decode provisioning profile (BSD/GNU compatible)
+          if echo "$APPLE_PROV_PROFILE" | base64 --decode >/dev/null 2>&1; then
+            echo "$APPLE_PROV_PROFILE" | base64 --decode > profile.mobileprovision
+          else
+            echo "$APPLE_PROV_PROFILE" | base64 -D > profile.mobileprovision
+          fi
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: Install GoReleaser
         run: |
-          brew install goreleaser/tap/goreleaser || brew upgrade goreleaser/tap/goreleaser || true
+          # Try install; if install fails, attempt upgrade. Fail the step if both fail so issues are visible.
+          if ! brew install goreleaser/tap/goreleaser; then
+            brew upgrade goreleaser/tap/goreleaser
+          fi
 
       - name: Run GoReleaser (macOS)
         env:
@@ -139,7 +165,9 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -e
-          if security list-keychains | grep -q "build.keychain"; then
-            security delete-keychain build.keychain || true
+          # Delete the keychain we created (if present)
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ] || security list-keychains | grep -q "$KEYCHAIN_PATH"; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
           fi
           rm -f cert.p12 profile.mobileprovision || true
