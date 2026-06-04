@@ -29,6 +29,9 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Set up GCP credentials
+        run: echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > gcp-secret.json
+
       - name: Run GoReleaser
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -37,5 +40,10 @@ jobs:
             -v "${PWD}:/workspace" \
             -w /workspace \
             -e GITHUB_TOKEN \
+            -e GOOGLE_APPLICATION_CREDENTIALS=/workspace/gcp-secret.json \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
             release --clean --parallelism 4
+
+      - name: Clean up GCP credentials
+        if: always()
+        run: rm -f gcp-secret.json

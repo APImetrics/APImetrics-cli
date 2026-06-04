@@ -59,6 +59,11 @@ builds:
       - CC=x86_64-w64-mingw32-gcc
       - CXX=x86_64-w64-mingw32-g++
 
+blobs:
+  - provider: gs
+    bucket: apimetrics-cli
+    directory: "{{ .Version }}"
+
 archives:
   - name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:

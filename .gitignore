@@ -1,3 +1,5 @@
 dist
 TODO*
 launch.json
+apimetrics
+gcp-secret.json
