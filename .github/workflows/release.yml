@@ -72,6 +72,17 @@ jobs:
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
             release $EXTRA --clean --parallelism 4
 
+      - name: Upload macOS artifacts for signing
+        if: ${{ github.event.inputs.snapshot != true && github.event.inputs.mac_only != true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-artifacts
+          if-no-files-found: error
+          path: |
+            dist/*-darwin-amd64.tar.gz
+            dist/*-darwin-arm64.tar.gz
+            dist/checksums.txt
+
       - name: Clean up GCP credentials
         if: always()
         run: rm -f gcp-secret.json
@@ -137,27 +148,70 @@ jobs:
           fi
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      - name: Install GoReleaser
-        run: |
-          # Try install; if install fails, attempt upgrade. Fail the step if both fail so issues are visible.
-          if ! brew install goreleaser/tap/goreleaser; then
-            brew upgrade goreleaser/tap/goreleaser
-          fi
+      - name: Download macOS artifacts
+        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' && github.event.inputs.mac_only != true }}
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-release-artifacts
+          path: dist
 
-      - name: Run GoReleaser (macOS)
+      - name: Sign macOS artifacts
+        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' && github.event.inputs.mac_only != true }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APP_SPECIFIC_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
-          SNAPSHOT: ${{ github.event.inputs.snapshot }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           set -e
-          EXTRA=""
-          if [ "$SNAPSHOT" = "true" ]; then
-            EXTRA="--snapshot"
-            echo "Running goreleaser in snapshot mode (no publish)"
+          if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::error::APPLE_SIGNING_IDENTITY is required to sign macOS binaries."
+            exit 1
           fi
-          goreleaser release $EXTRA --clean --parallelism 4
+          if [ ! -f dist/checksums.txt ]; then
+            echo "::error::dist/checksums.txt not found; expected macOS artifacts from Linux job."
+            exit 1
+          fi
+
+          for archive in dist/*-darwin-*.tar.gz; do
+            [ -f "$archive" ] || continue
+            tmpdir="$(mktemp -d)"
+            tar -xzf "$archive" -C "$tmpdir"
+
+            while IFS= read -r -d '' bin; do
+              codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$bin"
+            done < <(find "$tmpdir" -type f -perm -111 -print0)
+
+            tar -czf "${archive}.signed" -C "$tmpdir" .
+            mv "${archive}.signed" "$archive"
+            rm -rf "$tmpdir"
+
+            filename="$(basename "$archive")"
+            sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+            grep -v "  $filename\$" dist/checksums.txt > dist/checksums.new || true
+            printf "%s  %s\n" "$sha" "$filename" >> dist/checksums.new
+            mv dist/checksums.new dist/checksums.txt
+          done
+
+      - name: Upload signed macOS artifacts
+        if: ${{ github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' && github.event.inputs.mac_only != true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-signed-artifacts
+          if-no-files-found: error
+          path: |
+            dist/*-darwin-amd64.tar.gz
+            dist/*-darwin-arm64.tar.gz
+            dist/checksums.txt
+
+      - name: Replace macOS assets on GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && github.event.inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' && github.event.inputs.mac_only != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release upload "$GITHUB_REF_NAME" \
+            dist/*-darwin-amd64.tar.gz \
+            dist/*-darwin-arm64.tar.gz \
+            dist/checksums.txt \
+            --clobber
 
       - name: Clean up keychain and cert
         if: always()
