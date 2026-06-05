@@ -80,7 +80,7 @@ jobs:
             EXTRA="--snapshot"
             echo "Running goreleaser in snapshot mode (no publish)"
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            EXTRA="--skip publish"
+            EXTRA="--skip publish,homebrew"
             echo "Building artifacts without publishing; GitHub release and GCS upload deferred to finalization"
           fi
 
@@ -308,14 +308,66 @@ jobs:
 
       - name: Publish Homebrew formula
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: '~> v2'
-          args: release --skip before,archive,sign,sbom,publish,announce,validate,notarize
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE_URL="https://github.com/APImetrics/APImetrics-cli/releases/download/${GITHUB_REF_NAME}"
+          AMD64_FILE="apimetrics-${VERSION}-darwin-amd64.tar.gz"
+          ARM64_FILE="apimetrics-${VERSION}-darwin-arm64.tar.gz"
+
+          AMD64_SHA=$(awk -v f="${AMD64_FILE}" '$2 == f {print $1}' dist/checksums.txt)
+          ARM64_SHA=$(awk -v f="${ARM64_FILE}" '$2 == f {print $1}' dist/checksums.txt)
+
+          if [ -z "$AMD64_SHA" ] || [ -z "$ARM64_SHA" ]; then
+            echo "::error::Could not find darwin checksums in dist/checksums.txt"
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/APImetrics/homebrew-tap.git" tap-repo
+
+          cat > tap-repo/Formula/apimetrics.rb << FORMULA_END
+          # typed: false
+          # frozen_string_literal: true
+
+          class Apimetrics < Formula
+            desc "APImetrics CLI"
+            homepage "https://apimetrics.io"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_intel do
+                url "${BASE_URL}/${AMD64_FILE}"
+                sha256 "${AMD64_SHA}"
+              end
+              on_arm do
+                url "${BASE_URL}/${ARM64_FILE}"
+                sha256 "${ARM64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "apimetrics"
+            end
+
+            test do
+              system "#{bin}/apimetrics", "--version"
+            end
+          end
+          FORMULA_END
+
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/apimetrics.rb
+          if git diff --cached --quiet; then
+            echo "Homebrew formula is already up to date."
+          else
+            git commit -m "apimetrics ${VERSION}"
+            git push
+          fi
 
       - name: Clean up keychain and cert
         if: always()
