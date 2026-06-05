@@ -20,6 +20,7 @@ jobs:
   release:
     name: Build and publish release artifacts
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
@@ -36,6 +37,14 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Validate dispatch inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/* ]] && [ "${{ inputs.snapshot }}" != "true" ]; then
+            echo "::error::Manual dispatch from a non-tag ref requires snapshot=true to avoid creating a broken release."
+            exit 1
+          fi
+
       - name: Set up GCP credentials
         run: echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > gcp-secret.json
 
@@ -45,11 +54,13 @@ jobs:
           APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          APPLE_PROV_PROFILE: ${{ secrets.APPLE_PROV_PROFILE }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           missing=0
-          for var_name in APPLE_CERT_P12 APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD APPLE_PROV_PROFILE APPLE_SIGNING_IDENTITY; do
+          for var_name in APPLE_CERT_P12 APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
             if [ -z "${!var_name}" ]; then
               echo "::error::$var_name secret not configured; refusing to publish unsigned macOS artifacts on tag push."
               missing=1
@@ -72,7 +83,7 @@ jobs:
             echo "Running goreleaser in snapshot mode (no publish)"
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             DRAFT="--draft"
-            echo "Creating draft release until macOS artifacts are signed"
+            echo "Creating draft release until macOS artifacts are signed and notarized"
           fi
           docker run --rm \
             -v "${PWD}:/workspace" \
@@ -98,91 +109,69 @@ jobs:
         run: rm -f gcp-secret.json
 
   release-macos:
-    name: Build and sign macOS artifacts
+    name: Sign and notarize macOS artifacts
     runs-on: macos-latest
     needs: release
+    timeout-minutes: 30
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Test
-        run: go test ./...
-
       - name: Check for Apple signing secrets
+        id: secrets_check
         run: |
-          if [ -z "${{ secrets.APPLE_CERT_P12 }}" ]; then
-            echo "WARNING: APPLE_CERT_P12 secret not found — skipping Apple code signing for this run."
-            echo "::warning::APPLE_CERT_P12 secret not found — skipping Apple code signing for this run."
+          if [ -n "${{ secrets.APPLE_CERT_P12 }}" ]; then
+            echo "has_signing_cert=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Apple signing secrets detected; will proceed with import and signing."
+            echo "has_signing_cert=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::APPLE_CERT_P12 not configured — skipping Apple code signing."
           fi
 
-      - name: Import Apple certificate and provisioning profile
-        if: ${{ secrets.APPLE_CERT_P12 != '' }}
+      - name: Import Apple certificate
+        if: steps.secrets_check.outputs.has_signing_cert == 'true'
         env:
           APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          APPLE_PROV_PROFILE: ${{ secrets.APPLE_PROV_PROFILE }}
         run: |
           set -e
-          for var_name in APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD APPLE_PROV_PROFILE; do
+          for var_name in APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD; do
             if [ -z "${!var_name}" ]; then
               echo "::error::$var_name is required when APPLE_CERT_P12 is configured."
               exit 1
             fi
           done
 
-          # Decode .p12 (supports both GNU and BSD base64)
-          if printf '%s' "$APPLE_CERT_P12" | base64 --decode >/dev/null 2>&1; then
-            printf '%s' "$APPLE_CERT_P12" | base64 --decode > cert.p12
-          else
-            printf '%s' "$APPLE_CERT_P12" | base64 -D > cert.p12
-          fi
+          printf '%s' "$APPLE_CERT_P12" | base64 -D > cert.p12
 
-          # Use a keychain in the runner temp directory and reference it explicitly
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security import cert.p12 -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          # Decode provisioning profile (BSD/GNU compatible)
-          if printf '%s' "$APPLE_PROV_PROFILE" | base64 --decode >/dev/null 2>&1; then
-            printf '%s' "$APPLE_PROV_PROFILE" | base64 --decode > profile.mobileprovision
-          else
-            printf '%s' "$APPLE_PROV_PROFILE" | base64 -D > profile.mobileprovision
-          fi
-          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-
       - name: Download macOS artifacts
-        if: ${{ inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        if: ${{ inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: macos-release-artifacts
           path: dist
 
-      - name: Sign macOS artifacts
-        if: ${{ inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+      - name: Sign and notarize macOS artifacts
+        if: ${{ inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
         run: |
           set -e
-          if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
-            echo "::error::APPLE_SIGNING_IDENTITY is required to sign macOS binaries."
-            exit 1
-          fi
+          for var_name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!var_name}" ]; then
+              echo "::error::$var_name is required for signing and notarization."
+              exit 1
+            fi
+          done
           if [ ! -f dist/checksums.txt ]; then
             echo "::error::dist/checksums.txt not found; expected macOS artifacts from Linux job."
             exit 1
@@ -194,7 +183,19 @@ jobs:
             tar -xzf "$archive" -C "$tmpdir"
 
             while IFS= read -r -d '' bin; do
-              codesign --force --options runtime --timestamp --keychain "$KEYCHAIN_PATH" --sign "$APPLE_SIGNING_IDENTITY" "$bin"
+              codesign --force --options runtime --timestamp \
+                --keychain "$KEYCHAIN_PATH" \
+                --sign "$APPLE_SIGNING_IDENTITY" "$bin"
+
+              # Notarize each binary via a zip (notarytool requires zip/dmg/pkg, not a raw binary)
+              zip_path="$(mktemp).zip"
+              zip -j "$zip_path" "$bin"
+              xcrun notarytool submit "$zip_path" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_ID_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait
+              rm -f "$zip_path"
             done < <(find "$tmpdir" -type f -perm -111 -print0)
 
             tar -czf "${archive}.signed" -C "$tmpdir" .
@@ -209,7 +210,7 @@ jobs:
           done
 
       - name: Upload signed macOS artifacts
-        if: ${{ inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        if: ${{ inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: macos-signed-artifacts
@@ -220,7 +221,7 @@ jobs:
             dist/checksums.txt
 
       - name: Replace macOS assets on GitHub release
-        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -232,7 +233,7 @@ jobs:
             --clobber
 
       - name: Publish finalized GitHub release
-        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && secrets.APPLE_CERT_P12 != '' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -241,13 +242,9 @@ jobs:
 
       - name: Clean up keychain and cert
         if: always()
-        env:
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
-          set -e
-          # Delete the keychain we created (if present)
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
           if [ -f "$KEYCHAIN_PATH" ] || security list-keychains | grep -q "$KEYCHAIN_PATH"; then
             security delete-keychain "$KEYCHAIN_PATH" || true
           fi
-          rm -f cert.p12 profile.mobileprovision || true
+          rm -f cert.p12 || true
