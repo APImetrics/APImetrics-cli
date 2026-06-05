@@ -173,6 +173,7 @@ jobs:
           security import cert.p12 -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"' | xargs)
 
       - name: Download release artifacts
         if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
@@ -205,12 +206,14 @@ jobs:
           for archive in dist/*-darwin-*.tar.gz; do
             [ -f "$archive" ] || continue
             tmpdir="$(mktemp -d)"
+            orig_members=$(tar -tzf "$archive")
             tar -xzf "$archive" -C "$tmpdir"
 
             while IFS= read -r -d '' bin; do
               codesign --force --options runtime --timestamp \
                 --keychain "$KEYCHAIN_PATH" \
                 --sign "$APPLE_SIGNING_IDENTITY" "$bin"
+              codesign --verify --deep --strict "$bin"
 
               # Notarize each binary via a zip (notarytool requires zip/dmg/pkg, not a raw binary)
               zip_dir="$(mktemp -d)"
@@ -224,7 +227,8 @@ jobs:
               rm -rf "$zip_dir"
             done < <(find "$tmpdir" -type f -perm -111 -print0)
 
-            tar -czf "${archive}.signed" -C "$tmpdir" .
+            # shellcheck disable=SC2086
+            tar -czf "${archive}.signed" -C "$tmpdir" $orig_members
             mv "${archive}.signed" "$archive"
             rm -rf "$tmpdir"
 
