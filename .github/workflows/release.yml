@@ -3,6 +3,8 @@ name: Release
 on:
   push:
     tags:
+      # v0.* is intentional: prevents accidental production releases during
+      # initial development. Update to v* when ready to ship v1.0.
       - v0.*
   workflow_dispatch:
     inputs:
@@ -15,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # required for Workload Identity Federation
 
 jobs:
   release:
@@ -34,9 +37,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Test
-        run: go test ./...
-
       - name: Validate dispatch inputs
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -46,9 +46,6 @@ jobs:
             echo "::error::Manual dispatch from a non-tag ref requires snapshot=true to avoid creating a broken release."
             exit 1
           fi
-
-      - name: Set up GCP credentials
-        run: echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > gcp-secret.json
 
       - name: Ensure mac signing secrets for tag releases
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
@@ -72,19 +69,13 @@ jobs:
             exit 1
           fi
 
-      - name: Ensure GCP credentials for tag releases
+      - name: Authenticate to Google Cloud
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
-        env:
-          GCP_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-        run: |
-          if [ -z "$GCP_CREDENTIALS_JSON" ]; then
-            echo "::error::GOOGLE_APPLICATION_CREDENTIALS secret not configured; refusing to publish artifacts on tag push."
-            exit 1
-          fi
-          if ! printf '%s' "$GCP_CREDENTIALS_JSON" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
-            echo "::error::GOOGLE_APPLICATION_CREDENTIALS is not valid JSON; refusing to publish artifacts on tag push."
-            exit 1
-          fi
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Run GoReleaser (Linux)
         env:
@@ -100,13 +91,26 @@ jobs:
             EXTRA="--skip publish"
             echo "Building artifacts without publishing; GitHub release and GCS upload deferred to finalization"
           fi
+
+          # Mount WIF credentials into the container when present (tag releases only).
+          CREDS_OPTS=()
+          if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            CREDS_DIR="$(dirname "$GOOGLE_APPLICATION_CREDENTIALS")"
+            CREDS_OPTS=(
+              -v "${CREDS_DIR}:${CREDS_DIR}:ro"
+              -e GOOGLE_APPLICATION_CREDENTIALS
+              -e ACTIONS_ID_TOKEN_REQUEST_URL
+              -e ACTIONS_ID_TOKEN_REQUEST_TOKEN
+            )
+          fi
+
           docker run --rm \
             -v "${PWD}:/workspace" \
             -w /workspace \
             -e GITHUB_TOKEN \
-            -e GOOGLE_APPLICATION_CREDENTIALS=/workspace/gcp-secret.json \
+            "${CREDS_OPTS[@]}" \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
-            release $EXTRA --clean --parallelism 4
+            release $EXTRA --clean --parallelism 2
 
       - name: Create GitHub draft release
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
@@ -136,10 +140,6 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
-
-      - name: Clean up GCP credentials
-        if: always()
-        run: rm -f gcp-secret.json
 
   release-macos:
     name: Sign and notarize macOS artifacts
@@ -257,13 +257,12 @@ jobs:
             dist/*-darwin-arm64.tar.gz
             dist/checksums.txt
 
-      - name: Set up GCP credentials for GCS upload
+      - name: Authenticate to Google Cloud
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
-        env:
-          GCP_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-        run: |
-          printf '%s' "$GCP_CREDENTIALS_JSON" > "$RUNNER_TEMP/gcp-creds.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-creds.json" >> "$GITHUB_ENV"
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Upload all artifacts to GCS
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
@@ -292,11 +291,11 @@ jobs:
           set -e
           gh release edit "$GITHUB_REF_NAME" --draft=false
 
-      - name: Clean up keychain, cert, and GCP credentials
+      - name: Clean up keychain and cert
         if: always()
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
           if [ -f "$KEYCHAIN_PATH" ] || security list-keychains | grep -q "$KEYCHAIN_PATH"; then
             security delete-keychain "$KEYCHAIN_PATH" || true
           fi
-          rm -f cert.p12 "$RUNNER_TEMP/gcp-creds.json" || true
+          rm -f cert.p12 || true

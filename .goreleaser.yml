@@ -64,6 +64,19 @@ blobs:
     bucket: apimetrics-cli
     directory: "{{ .Version }}"
 
+brews:
+  - name: apimetrics
+    repository:
+      owner: APImetrics
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://apimetrics.io"
+    description: "APImetrics CLI"
+    license: "MIT"
+    install: bin.install "apimetrics"
+    test: |
+      system "#{bin}/apimetrics", "--version"
+
 archives:
   - name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:
