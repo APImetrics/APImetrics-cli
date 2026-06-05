@@ -141,7 +141,7 @@ base64 -i certificate.p12 | pbcopy   # copies base64 to clipboard
 The Homebrew formula is pushed to `APImetrics/homebrew-tap`. Ensure:
 
 - The repository exists.
-- A `Formula/` directory exists in the repository root (create it with a `.gitkeep` if needed — GoReleaser will create `Formula/apimetrics.rb` on first release).
+- A `Formula/` directory exists in the repository root (create it with a `.gitkeep` if needed — the release workflow will create `Formula/apimetrics.rb` on first release).
 - The GitHub App from step 2 is installed on this repository.
 
 ---

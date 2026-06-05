@@ -77,7 +77,7 @@ jobs:
           set -e
           EXTRA=""
           if [ "$SNAPSHOT" = "true" ]; then
-            EXTRA="--snapshot"
+            EXTRA="--snapshot --skip homebrew"
             echo "Running goreleaser in snapshot mode (no publish)"
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             EXTRA="--skip publish,homebrew"
@@ -234,7 +234,7 @@ jobs:
             printf "%s  %s\n" "$sha" "$filename" >> dist/checksums.new
             mv dist/checksums.new dist/checksums.txt
 
-            # Keep artifacts.json in sync so goreleaser publish uses signed checksums.
+            # Keep artifacts.json in sync with the signed checksums for archival accuracy.
             PATCH_NAME="$filename" PATCH_SHA="$sha" python3 << 'PYEOF'
           import json, os
           data = json.load(open('dist/artifacts.json'))
