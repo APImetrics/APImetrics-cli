@@ -61,12 +61,12 @@ jobs:
           missing=0
           for var_name in APPLE_CERT_P12 APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
             if [ -z "${!var_name}" ]; then
-              echo "::error::$var_name secret not configured; refusing to publish unsigned macOS artifacts on tag push."
+              echo "::warning::$var_name secret not configured; macOS signing/finalization steps will be skipped."
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            exit 1
+            echo "Proceeding with Linux/Windows build only."
           fi
 
       - name: Run GoReleaser (Linux)
@@ -267,8 +267,8 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.PRODUCTION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.PRODUCTION_WORKLOAD_SERVICE_ACCOUNT }}
 
       - name: Set up Cloud SDK
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}

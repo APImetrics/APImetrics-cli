@@ -65,14 +65,14 @@ gcloud iam service-accounts add-iam-policy-binding \
 Then retrieve the values to store as secrets:
 
 ```bash
-# Workload identity provider (store as GCP_WORKLOAD_IDENTITY_PROVIDER)
+# Workload identity provider (store as PRODUCTION_WORKLOAD_IDENTITY_PROVIDER)
 gcloud iam workload-identity-pools providers describe "$PROVIDER_NAME" \
   --project="$PROJECT_ID" \
   --location=global \
   --workload-identity-pool="$POOL_NAME" \
   --format="value(name)"
 
-# Service account email (store as GCP_SERVICE_ACCOUNT)
+# Service account email (store as PRODUCTION_WORKLOAD_SERVICE_ACCOUNT)
 echo "${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 ```
 
@@ -80,8 +80,8 @@ echo "${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 | Secret | Value |
 |--------|-------|
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Full provider resource name (`projects/.../providers/github`) |
-| `GCP_SERVICE_ACCOUNT` | Service account email (`apimetrics-cli-release@….iam.gserviceaccount.com`) |
+| `PRODUCTION_WORKLOAD_IDENTITY_PROVIDER` | Full provider resource name (`projects/.../providers/github`) |
+| `PRODUCTION_WORKLOAD_SERVICE_ACCOUNT` | Service account email (`apimetrics-cli-release@….iam.gserviceaccount.com`) |
 
 ---
 
@@ -152,8 +152,8 @@ All secrets required on `APImetrics/APImetrics-cli`:
 
 | Secret | Purpose |
 |--------|---------|
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | WIF provider for GCS uploads |
-| `GCP_SERVICE_ACCOUNT` | GCP service account email for GCS uploads |
+| `PRODUCTION_WORKLOAD_IDENTITY_PROVIDER` | WIF provider for GCS uploads |
+| `PRODUCTION_WORKLOAD_SERVICE_ACCOUNT` | GCP service account email for GCS uploads |
 | `GH_APP_ID` | GitHub App ID for Homebrew tap access |
 | `GH_APP_PRIVATE_KEY` | GitHub App private key for Homebrew tap access |
 | `APPLE_CERT_P12` | Base64 Apple Developer ID certificate |
