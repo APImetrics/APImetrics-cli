@@ -72,6 +72,20 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure GCP credentials for tag releases
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
+        env:
+          GCP_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+        run: |
+          if [ -z "$GCP_CREDENTIALS_JSON" ]; then
+            echo "::error::GOOGLE_APPLICATION_CREDENTIALS secret not configured; refusing to publish artifacts on tag push."
+            exit 1
+          fi
+          if ! printf '%s' "$GCP_CREDENTIALS_JSON" | python3 -c "import sys, json; json.load(sys.stdin)" 2>/dev/null; then
+            echo "::error::GOOGLE_APPLICATION_CREDENTIALS is not valid JSON; refusing to publish artifacts on tag push."
+            exit 1
+          fi
+
       - name: Run GoReleaser (Linux)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
