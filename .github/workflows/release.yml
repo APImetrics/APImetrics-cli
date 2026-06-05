@@ -251,15 +251,17 @@ jobs:
             mv dist/checksums.new dist/checksums.txt
 
             # Keep artifacts.json in sync so goreleaser publish uses signed checksums.
-            python3 -c "
-import json, sys
-data = json.load(open('dist/artifacts.json'))
-for a in data:
-    if a.get('name') == sys.argv[1]:
-        a.setdefault('extra', {})['Checksum'] = 'sha256:' + sys.argv[2]
-with open('dist/artifacts.json', 'w') as f:
-    json.dump(data, f, indent=2)
-" "$filename" "$sha"
+            PATCH_NAME="$filename" PATCH_SHA="$sha" python3 << 'PYEOF'
+          import json, os
+          data = json.load(open('dist/artifacts.json'))
+          name = os.environ['PATCH_NAME']
+          checksum = os.environ['PATCH_SHA']
+          for a in data:
+              if a.get('name') == name:
+                  a.setdefault('extra', {})['Checksum'] = 'sha256:' + checksum
+          with open('dist/artifacts.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          PYEOF
           done
 
       - name: Upload signed macOS artifacts
