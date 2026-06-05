@@ -69,6 +69,7 @@ brews:
     repository:
       owner: APImetrics
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://apimetrics.io"
     description: "APImetrics CLI"

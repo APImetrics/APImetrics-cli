@@ -140,6 +140,8 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+            dist/artifacts.json
+            dist/metadata.json
 
   release-macos:
     name: Sign and notarize macOS artifacts
@@ -149,6 +151,9 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
       - name: Check for Apple signing secrets
         id: secrets_check
         env:
@@ -244,6 +249,17 @@ jobs:
             grep -v "  $filename\$" dist/checksums.txt > dist/checksums.new || true
             printf "%s  %s\n" "$sha" "$filename" >> dist/checksums.new
             mv dist/checksums.new dist/checksums.txt
+
+            # Keep artifacts.json in sync so goreleaser publish uses signed checksums.
+            python3 -c "
+import json, sys
+data = json.load(open('dist/artifacts.json'))
+for a in data:
+    if a.get('name') == sys.argv[1]:
+        a.setdefault('extra', {})['Checksum'] = 'sha256:' + sys.argv[2]
+with open('dist/artifacts.json', 'w') as f:
+    json.dump(data, f, indent=2)
+" "$filename" "$sha"
           done
 
       - name: Upload signed macOS artifacts
@@ -290,6 +306,17 @@ jobs:
         run: |
           set -e
           gh release edit "$GITHUB_REF_NAME" --draft=false
+
+      - name: Publish Homebrew formula
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: publish --skip blobs,release,announce,validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
       - name: Clean up keychain and cert
         if: always()
