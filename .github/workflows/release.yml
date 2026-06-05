@@ -280,6 +280,10 @@ with open('dist/artifacts.json', 'w') as f:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      - name: Set up Cloud SDK
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Upload all artifacts to GCS
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         run: |
@@ -322,7 +326,7 @@ with open('dist/artifacts.json', 'w') as f:
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: release --skip build,archive,sign,checksum,sbom,announce,validate
+          args: release --skip before,archive,sign,sbom,publish,announce,validate,notarize
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}

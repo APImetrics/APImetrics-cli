@@ -103,7 +103,7 @@ The workflow uses a GitHub App to push formula updates to `APImetrics/homebrew-t
 | Secret | Value |
 |--------|-------|
 | `GH_APP_ID` | Numeric App ID shown on the app settings page |
-| `GH_APP_PRIVATE_KEY` | Full contents of the downloaded `.pem` file |
+| `GH_APP_PRIVATE_KEY` | Full contents of the downloaded `.pem` file, including the `-----BEGIN RSA PRIVATE KEY-----` and `-----END RSA PRIVATE KEY-----` header/footer lines |
 
 ---
 
