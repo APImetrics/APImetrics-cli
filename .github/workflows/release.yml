@@ -322,7 +322,7 @@ with open('dist/artifacts.json', 'w') as f:
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: publish --skip blobs,release,announce,validate
+          args: release --skip build,archive,sign,checksum,sbom,announce,validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}
