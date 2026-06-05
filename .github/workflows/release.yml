@@ -405,10 +405,12 @@ jobs:
           WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
           set -e
+          # Requires APImetrics.APImetricsCLI to already exist in microsoft/winget-pkgs.
+          # See RELEASING.md § 5 for the one-time manual submission required before this runs.
           VERSION="${GITHUB_REF_NAME#v}"
           INSTALLER_URL="https://github.com/APImetrics/APImetrics-cli/releases/download/${GITHUB_REF_NAME}/apimetrics-${VERSION}-windows-amd64.zip"
 
-          dotnet tool install --global Microsoft.WinGetCreate --version 1.12.8.0
+          dotnet tool update --global Microsoft.WinGetCreate --version 1.12.8.0
           export PATH="$PATH:$HOME/.dotnet/tools"
 
           wingetcreate update APImetrics.APImetricsCLI \
