@@ -79,13 +79,12 @@ jobs:
         run: |
           set -e
           EXTRA=""
-          DRAFT=""
           if [ "$SNAPSHOT" = "true" ]; then
             EXTRA="--snapshot"
             echo "Running goreleaser in snapshot mode (no publish)"
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            DRAFT="--draft"
-            echo "Creating draft release until macOS artifacts are signed and notarized"
+            EXTRA="--skip publish"
+            echo "Building artifacts without publishing; GitHub release and GCS upload deferred to finalization"
           fi
           docker run --rm \
             -v "${PWD}:/workspace" \
@@ -93,17 +92,35 @@ jobs:
             -e GITHUB_TOKEN \
             -e GOOGLE_APPLICATION_CREDENTIALS=/workspace/gcp-secret.json \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
-            release $EXTRA $DRAFT --clean --parallelism 4
+            release $EXTRA --clean --parallelism 4
 
-      - name: Upload macOS artifacts for signing
+      - name: Create GitHub draft release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          if [ -f dist/CHANGELOG.md ]; then
+            gh release create "$GITHUB_REF_NAME" \
+              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              --draft \
+              --notes-file dist/CHANGELOG.md
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              --draft \
+              --generate-notes
+          fi
+
+      - name: Upload release artifacts
         if: ${{ inputs.snapshot != true }}
         uses: actions/upload-artifact@v4
         with:
-          name: macos-release-artifacts
+          name: release-artifacts
           if-no-files-found: error
           path: |
-            dist/*-darwin-amd64.tar.gz
-            dist/*-darwin-arm64.tar.gz
+            dist/*.tar.gz
+            dist/*.zip
             dist/checksums.txt
 
       - name: Clean up GCP credentials
@@ -154,11 +171,11 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-      - name: Download macOS artifacts
+      - name: Download release artifacts
         if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/download-artifact@v4
         with:
-          name: macos-release-artifacts
+          name: release-artifacts
           path: dist
 
       - name: Sign and notarize macOS artifacts
@@ -226,6 +243,21 @@ jobs:
             dist/*-darwin-arm64.tar.gz
             dist/checksums.txt
 
+      - name: Set up GCP credentials for GCS upload
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        env:
+          GCP_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+        run: |
+          printf '%s' "$GCP_CREDENTIALS_JSON" > "$RUNNER_TEMP/gcp-creds.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-creds.json" >> "$GITHUB_ENV"
+
+      - name: Upload all artifacts to GCS
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          gsutil -m cp dist/*.tar.gz dist/*.zip dist/checksums.txt "gs://apimetrics-cli/$VERSION/"
+
       - name: Replace macOS assets on GitHub release
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
@@ -246,11 +278,11 @@ jobs:
           set -e
           gh release edit "$GITHUB_REF_NAME" --draft=false
 
-      - name: Clean up keychain and cert
+      - name: Clean up keychain, cert, and GCP credentials
         if: always()
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
           if [ -f "$KEYCHAIN_PATH" ] || security list-keychains | grep -q "$KEYCHAIN_PATH"; then
             security delete-keychain "$KEYCHAIN_PATH" || true
           fi
-          rm -f cert.p12 || true
+          rm -f cert.p12 "$RUNNER_TEMP/gcp-creds.json" || true
