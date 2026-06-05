@@ -112,13 +112,16 @@ jobs:
     name: Sign and notarize macOS artifacts
     runs-on: macos-latest
     needs: release
+    if: ${{ inputs.snapshot != true }}
     timeout-minutes: 30
 
     steps:
       - name: Check for Apple signing secrets
         id: secrets_check
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
         run: |
-          if [ -n "${{ secrets.APPLE_CERT_P12 }}" ]; then
+          if [ -n "$APPLE_CERT_P12" ]; then
             echo "has_signing_cert=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_signing_cert=false" >> "$GITHUB_OUTPUT"
@@ -188,14 +191,15 @@ jobs:
                 --sign "$APPLE_SIGNING_IDENTITY" "$bin"
 
               # Notarize each binary via a zip (notarytool requires zip/dmg/pkg, not a raw binary)
-              zip_path="$(mktemp).zip"
+              zip_dir="$(mktemp -d)"
+              zip_path="$zip_dir/binary.zip"
               zip -j "$zip_path" "$bin"
               xcrun notarytool submit "$zip_path" \
                 --apple-id "$APPLE_ID" \
                 --password "$APPLE_ID_PASSWORD" \
                 --team-id "$APPLE_TEAM_ID" \
                 --wait
-              rm -f "$zip_path"
+              rm -rf "$zip_dir"
             done < <(find "$tmpdir" -type f -perm -111 -print0)
 
             tar -czf "${archive}.signed" -C "$tmpdir" .
