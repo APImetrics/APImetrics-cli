@@ -376,8 +376,5 @@ jobs:
       - name: Clean up keychain and cert
         if: always()
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-          if [ -f "$KEYCHAIN_PATH" ] || security list-keychains | grep -q "$KEYCHAIN_PATH"; then
-            security delete-keychain "$KEYCHAIN_PATH" || true
-          fi
-          rm -f cert.p12 || true
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f cert.p12
