@@ -126,7 +126,7 @@ jobs:
           fi
 
       - name: Import Apple certificate
-        if: steps.secrets_check.outputs.has_signing_cert == 'true'
+        if: ${{ inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
