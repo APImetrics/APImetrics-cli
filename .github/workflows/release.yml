@@ -39,8 +39,10 @@ jobs:
 
       - name: Validate dispatch inputs
         if: github.event_name == 'workflow_dispatch'
+        env:
+          SNAPSHOT: ${{ inputs.snapshot }}
         run: |
-          if [[ "$GITHUB_REF" != refs/tags/* ]] && [ "${{ inputs.snapshot }}" != "true" ]; then
+          if [[ "$GITHUB_REF" != refs/tags/* ]] && [ "$SNAPSHOT" != "true" ]; then
             echo "::error::Manual dispatch from a non-tag ref requires snapshot=true to avoid creating a broken release."
             exit 1
           fi
@@ -129,7 +131,7 @@ jobs:
           fi
 
       - name: Import Apple certificate
-        if: ${{ inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
@@ -153,14 +155,14 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
       - name: Download macOS artifacts
-        if: ${{ inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: macos-release-artifacts
           path: dist
 
       - name: Sign and notarize macOS artifacts
-        if: ${{ inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -214,7 +216,7 @@ jobs:
           done
 
       - name: Upload signed macOS artifacts
-        if: ${{ inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: macos-signed-artifacts
@@ -225,7 +227,7 @@ jobs:
             dist/checksums.txt
 
       - name: Replace macOS assets on GitHub release
-        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -237,7 +239,7 @@ jobs:
             --clobber
 
       - name: Publish finalized GitHub release
-        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
