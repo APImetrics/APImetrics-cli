@@ -146,6 +146,44 @@ The Homebrew formula is pushed to `APImetrics/homebrew-tap`. Ensure:
 
 ---
 
+### 5. WinGet package
+
+The workflow uses `wingetcreate` to submit a PR to [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) after each release, keeping the Windows Package Manager entry up to date.
+
+#### Initial package submission (first release only)
+
+The package must exist in `microsoft/winget-pkgs` before automated updates can run. Create the initial manifest with `wingetcreate`:
+
+```bash
+# Install wingetcreate (.NET global tool; requires dotnet SDK)
+dotnet tool install --global Microsoft.WinGetCreate --version 1.12.8.0
+export PATH="$PATH:$HOME/.dotnet/tools"
+
+VERSION=0.1.0  # set to the first published version
+INSTALLER_URL="https://github.com/APImetrics/APImetrics-cli/releases/download/v${VERSION}/apimetrics-${VERSION}-windows-amd64.zip"
+
+wingetcreate new "$INSTALLER_URL" \
+  --id APImetrics.APImetricsCLI \
+  --version "$VERSION" \
+  --name "APImetrics CLI" \
+  --publisher "APImetrics" \
+  --token <YOUR_GITHUB_PAT>
+```
+
+Review the generated manifest files, then submit the PR manually. Once merged, subsequent releases are automated.
+
+#### GitHub PAT for automated updates
+
+The `wingetcreate update --submit` command creates a PR on `microsoft/winget-pkgs` using a GitHub account you control. Create a classic PAT (or fine-grained PAT) with **`public_repo`** scope on any GitHub account. The PR will appear under that account's name.
+
+**Secret to add to `APImetrics/APImetrics-cli`:**
+
+| Secret | Value |
+|--------|-------|
+| `WINGET_GITHUB_TOKEN` | PAT with `public_repo` scope, used to open PRs on `microsoft/winget-pkgs` |
+
+---
+
 ## Complete secrets reference
 
 All secrets required on `APImetrics/APImetrics-cli`:
@@ -163,6 +201,7 @@ All secrets required on `APImetrics/APImetrics-cli`:
 | `APPLE_ID` | Apple ID for notarization |
 | `APPLE_ID_PASSWORD` | App-specific password for notarization |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
+| `WINGET_GITHUB_TOKEN` | PAT for submitting WinGet PRs to `microsoft/winget-pkgs` |
 
 ---
 
