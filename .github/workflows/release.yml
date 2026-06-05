@@ -100,16 +100,16 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" &>/dev/null; then
             echo "Draft release $GITHUB_REF_NAME already exists (rerun); re-uploading artifacts."
             gh release upload "$GITHUB_REF_NAME" \
-              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt \
               --clobber
           elif [ -f dist/CHANGELOG.md ]; then
             gh release create "$GITHUB_REF_NAME" \
-              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt \
               --draft \
               --notes-file dist/CHANGELOG.md
           else
             gh release create "$GITHUB_REF_NAME" \
-              dist/*.tar.gz dist/*.zip dist/checksums.txt \
+              dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt \
               --draft \
               --generate-notes
           fi
