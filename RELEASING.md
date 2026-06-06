@@ -154,19 +154,18 @@ The workflow uses `wingetcreate` to submit a PR to [`microsoft/winget-pkgs`](htt
 
 The package must exist in `microsoft/winget-pkgs` before automated updates can run. Create the initial manifest with `wingetcreate`:
 
-```bash
-# Install wingetcreate (.NET global tool; requires dotnet SDK)
-dotnet tool install --global Microsoft.WinGetCreate --version 1.12.8.0
-export PATH="$PATH:$HOME/.dotnet/tools"
+```powershell
+# Download wingetcreate.exe (Windows only — run this on a Windows machine)
+Invoke-WebRequest -Uri "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe" -OutFile wingetcreate.exe
 
-VERSION=0.1.0  # set to the first published version
-INSTALLER_URL="https://storage.googleapis.com/apimetrics-cli/${VERSION}/apimetrics-${VERSION}-windows-amd64.zip"
+$version = "0.1.0"  # set to the first published version
+$installerUrl = "https://storage.googleapis.com/apimetrics-cli/$version/apimetrics-$version-windows-amd64.zip"
 
-wingetcreate new "$INSTALLER_URL" \
-  --id APImetrics.APImetricsCLI \
-  --version "$VERSION" \
-  --name "APImetrics CLI" \
-  --publisher "APImetrics" \
+.\wingetcreate.exe new $installerUrl `
+  --id APImetrics.APImetricsCLI `
+  --version $version `
+  --name "APImetrics CLI" `
+  --publisher "APImetrics" `
   --token <YOUR_GITHUB_PAT>
 ```
 

@@ -387,7 +387,7 @@ jobs:
 
   release-winget:
     name: Submit WinGet package update
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: release-macos
     if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
     timeout-minutes: 15
@@ -395,6 +395,7 @@ jobs:
     steps:
       - name: Check WinGet token
         id: winget_check
+        shell: bash
         env:
           WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
@@ -408,6 +409,7 @@ jobs:
       - name: Check release is published
         id: release_check
         if: ${{ steps.winget_check.outputs.has_token == 'true' }}
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -421,20 +423,19 @@ jobs:
 
       - name: Submit WinGet package update
         if: ${{ steps.winget_check.outputs.has_token == 'true' && steps.release_check.outputs.is_published == 'true' }}
+        shell: pwsh
         env:
           WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
-          set -e
+          $ErrorActionPreference = 'Stop'
           # Requires APImetrics.APImetricsCLI to already exist in microsoft/winget-pkgs.
           # See RELEASING.md § 5 for the one-time manual submission required before this runs.
-          VERSION="${GITHUB_REF_NAME#v}"
-          INSTALLER_URL="https://storage.googleapis.com/apimetrics-cli/${VERSION}/apimetrics-${VERSION}-windows-amd64.zip"
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $installerUrl = "https://storage.googleapis.com/apimetrics-cli/$version/apimetrics-$version-windows-amd64.zip"
 
-          dotnet tool update --global Microsoft.WinGetCreate --version 1.12.8.0
-          export PATH="$PATH:$HOME/.dotnet/tools"
-
-          wingetcreate update APImetrics.APImetricsCLI \
-            --version "$VERSION" \
-            --urls "$INSTALLER_URL" \
-            --submit \
-            --token "$WINGET_GITHUB_TOKEN"
+          Invoke-WebRequest -Uri "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe" -OutFile wingetcreate.exe
+          .\wingetcreate.exe update APImetrics.APImetricsCLI `
+            --version $version `
+            --urls $installerUrl `
+            --submit `
+            --token $env:WINGET_GITHUB_TOKEN
