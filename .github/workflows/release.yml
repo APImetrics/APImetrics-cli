@@ -411,7 +411,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          is_draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft')
+          is_draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')
           if [ "$is_draft" = "true" ]; then
             echo "is_published=false" >> "$GITHUB_OUTPUT"
             echo "::warning::GitHub release $GITHUB_REF_NAME is still a draft (Apple signing secrets may not be configured) — skipping WinGet submission."
