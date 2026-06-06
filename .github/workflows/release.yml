@@ -176,7 +176,6 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"' | xargs)
 
       - name: Download release artifacts
-        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: release-artifacts
@@ -264,22 +263,29 @@ jobs:
             dist/checksums.txt
 
       - name: Authenticate to Google Cloud
-        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.PRODUCTION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.PRODUCTION_WORKLOAD_SERVICE_ACCOUNT }}
 
       - name: Set up Cloud SDK
-        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Upload all artifacts to GCS
+      - name: Upload Linux and Windows artifacts to GCS
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          gsutil -m cp dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt "gs://apimetrics-cli/$VERSION/"
+
+      - name: Upload signed macOS artifacts to GCS
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          gsutil -m cp dist/*.tar.gz dist/*.zip dist/checksums.txt "gs://apimetrics-cli/$VERSION/"
+          gsutil -m cp dist/*-darwin-*.tar.gz dist/checksums.txt "gs://apimetrics-cli/$VERSION/"
 
       - name: Replace macOS assets on GitHub release
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
