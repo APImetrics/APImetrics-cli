@@ -160,7 +160,7 @@ dotnet tool install --global Microsoft.WinGetCreate --version 1.12.8.0
 export PATH="$PATH:$HOME/.dotnet/tools"
 
 VERSION=0.1.0  # set to the first published version
-INSTALLER_URL="https://github.com/APImetrics/APImetrics-cli/releases/download/v${VERSION}/apimetrics-${VERSION}-windows-amd64.zip"
+INSTALLER_URL="https://storage.googleapis.com/apimetrics-cli/${VERSION}/apimetrics-${VERSION}-windows-amd64.zip"
 
 wingetcreate new "$INSTALLER_URL" \
   --id APImetrics.APImetricsCLI \
