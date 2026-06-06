@@ -174,13 +174,16 @@ Review the generated manifest files, then submit the PR manually. Once merged, s
 
 #### GitHub PAT for automated updates
 
-The `wingetcreate update --submit` command creates a PR on `microsoft/winget-pkgs` using a GitHub account you control. Create a classic PAT (or fine-grained PAT) with **`public_repo`** scope on any GitHub account. The PR will appear under that account's name.
+The `wingetcreate update --submit` command creates a PR on `microsoft/winget-pkgs` using a GitHub account you control.
+
+- **Classic PAT:** `public_repo` scope is sufficient.
+- **Fine-grained PAT:** grant access to your fork of `winget-pkgs` and enable **Contents: read/write** and **Pull requests: read/write**.
 
 **Secret to add to `APImetrics/APImetrics-cli`:**
 
 | Secret | Value |
 |--------|-------|
-| `WINGET_GITHUB_TOKEN` | PAT with `public_repo` scope, used to open PRs on `microsoft/winget-pkgs` |
+| `WINGET_GITHUB_TOKEN` | Token used by `wingetcreate` to push to your fork and open PRs on `microsoft/winget-pkgs` |
 
 ---
 
