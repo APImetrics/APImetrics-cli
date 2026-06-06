@@ -399,8 +399,22 @@ jobs:
             echo "::warning::WINGET_GITHUB_TOKEN not configured — skipping WinGet submission."
           fi
 
-      - name: Submit WinGet package update
+      - name: Check release is published
+        id: release_check
         if: ${{ steps.winget_check.outputs.has_token == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          is_draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft')
+          if [ "$is_draft" = "true" ]; then
+            echo "is_published=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub release $GITHUB_REF_NAME is still a draft (Apple signing secrets may not be configured) — skipping WinGet submission."
+          else
+            echo "is_published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Submit WinGet package update
+        if: ${{ steps.winget_check.outputs.has_token == 'true' && steps.release_check.outputs.is_published == 'true' }}
         env:
           WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |

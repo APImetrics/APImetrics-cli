@@ -176,8 +176,8 @@ Review the generated manifest files, then submit the PR manually. Once merged, s
 
 The `wingetcreate update --submit` command creates a PR on `microsoft/winget-pkgs` using a GitHub account you control.
 
-- **Classic PAT:** `public_repo` scope is sufficient.
-- **Fine-grained PAT:** grant access to your fork of `winget-pkgs` and enable **Contents: read/write** and **Pull requests: read/write**.
+- **Classic PAT (recommended):** `public_repo` scope is sufficient.
+- **Fine-grained PAT:** grant access to your fork of `winget-pkgs` and enable **Contents: read/write** and **Pull requests: read/write**. Note that `wingetcreate` creates the fork on first run — the fork must exist before you can pre-select it when generating the token.
 
 **Secret to add to `APImetrics/APImetrics-cli`:**
 
