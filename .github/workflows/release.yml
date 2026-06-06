@@ -176,7 +176,6 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"' | xargs)
 
       - name: Download release artifacts
-        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: release-artifacts
@@ -264,22 +263,29 @@ jobs:
             dist/checksums.txt
 
       - name: Authenticate to Google Cloud
-        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.PRODUCTION_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.PRODUCTION_WORKLOAD_SERVICE_ACCOUNT }}
 
       - name: Set up Cloud SDK
-        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Upload all artifacts to GCS
+      - name: Upload Linux and Windows artifacts to GCS
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          gsutil -m cp dist/*-linux-*.tar.gz dist/*-windows-*.zip "gs://apimetrics-cli/$VERSION/"
+
+      - name: Upload signed macOS artifacts to GCS
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          gsutil -m cp dist/*.tar.gz dist/*.zip dist/checksums.txt "gs://apimetrics-cli/$VERSION/"
+          gsutil -m cp dist/*-darwin-*.tar.gz dist/checksums.txt "gs://apimetrics-cli/$VERSION/"
 
       - name: Replace macOS assets on GitHub release
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
@@ -317,7 +323,7 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          BASE_URL="https://github.com/APImetrics/APImetrics-cli/releases/download/${GITHUB_REF_NAME}"
+          BASE_URL="https://storage.googleapis.com/apimetrics-cli/${VERSION}"
           AMD64_FILE="apimetrics-${VERSION}-darwin-amd64.tar.gz"
           ARM64_FILE="apimetrics-${VERSION}-darwin-arm64.tar.gz"
 
@@ -378,3 +384,59 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
           rm -f cert.p12
+
+  release-winget:
+    name: Submit WinGet package update
+    runs-on: windows-latest
+    needs: release-macos
+    if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Check WinGet token
+        id: winget_check
+        shell: bash
+        env:
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          if [ -n "$WINGET_GITHUB_TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::WINGET_GITHUB_TOKEN not configured — skipping WinGet submission."
+          fi
+
+      - name: Check release is published
+        id: release_check
+        if: ${{ steps.winget_check.outputs.has_token == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          is_draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')
+          if [ "$is_draft" = "true" ]; then
+            echo "is_published=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub release $GITHUB_REF_NAME is still a draft (Apple signing secrets may not be configured) — skipping WinGet submission."
+          else
+            echo "is_published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Submit WinGet package update
+        if: ${{ steps.winget_check.outputs.has_token == 'true' && steps.release_check.outputs.is_published == 'true' }}
+        shell: pwsh
+        env:
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Requires APImetrics.APImetricsCLI to already exist in microsoft/winget-pkgs.
+          # See RELEASING.md § 5 for the one-time manual submission required before this runs.
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $installerUrl = "https://storage.googleapis.com/apimetrics-cli/$version/apimetrics-$version-windows-amd64.zip"
+
+          Invoke-WebRequest -Uri "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe" -OutFile wingetcreate.exe
+          .\wingetcreate.exe update APImetrics.APImetricsCLI `
+            --version $version `
+            --urls $installerUrl `
+            --submit `
+            --token $env:WINGET_GITHUB_TOKEN

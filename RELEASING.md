@@ -146,6 +146,46 @@ The Homebrew formula is pushed to `APImetrics/homebrew-tap`. Ensure:
 
 ---
 
+### 5. WinGet package
+
+The workflow uses `wingetcreate` to submit a PR to [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) after each release, keeping the Windows Package Manager entry up to date.
+
+#### Initial package submission (first release only)
+
+The package must exist in `microsoft/winget-pkgs` before automated updates can run. Create the initial manifest with `wingetcreate`:
+
+```powershell
+# Download wingetcreate.exe (Windows only — run this on a Windows machine)
+Invoke-WebRequest -Uri "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe" -OutFile wingetcreate.exe
+
+$version = "0.1.0"  # set to the first published version
+$installerUrl = "https://storage.googleapis.com/apimetrics-cli/$version/apimetrics-$version-windows-amd64.zip"
+
+.\wingetcreate.exe new $installerUrl `
+  --id APImetrics.APImetricsCLI `
+  --version $version `
+  --name "APImetrics CLI" `
+  --publisher "APImetrics" `
+  --token <YOUR_GITHUB_PAT>
+```
+
+Review the generated manifest files, then submit the PR manually. Once merged, subsequent releases are automated.
+
+#### GitHub PAT for automated updates
+
+The `wingetcreate update --submit` command creates a PR on `microsoft/winget-pkgs` using a GitHub account you control.
+
+- **Classic PAT (recommended):** `public_repo` scope is sufficient.
+- **Fine-grained PAT:** grant access to your fork of `winget-pkgs` and enable **Contents: read/write** and **Pull requests: read/write**. Note that `wingetcreate` creates the fork on first run — the fork must exist before you can pre-select it when generating the token.
+
+**Secret to add to `APImetrics/APImetrics-cli`:**
+
+| Secret | Value |
+|--------|-------|
+| `WINGET_GITHUB_TOKEN` | Token used by `wingetcreate` to push to your fork and open PRs on `microsoft/winget-pkgs` |
+
+---
+
 ## Complete secrets reference
 
 All secrets required on `APImetrics/APImetrics-cli`:
@@ -163,6 +203,7 @@ All secrets required on `APImetrics/APImetrics-cli`:
 | `APPLE_ID` | Apple ID for notarization |
 | `APPLE_ID_PASSWORD` | App-specific password for notarization |
 | `APPLE_TEAM_ID` | Apple Developer Team ID |
+| `WINGET_GITHUB_TOKEN` | PAT for submitting WinGet PRs to `microsoft/winget-pkgs` |
 
 ---
 
