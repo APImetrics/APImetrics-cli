@@ -162,10 +162,10 @@ $version = "0.1.0"  # set to the first published version
 $installerUrl = "https://storage.googleapis.com/apimetrics-cli/$version/apimetrics-$version-windows-amd64.zip"
 
 .\wingetcreate.exe new $installerUrl `
-  --id APImetrics.APImetricsCLI `
+  --id APIContext.APImetricsCLI `
   --version $version `
   --name "APImetrics CLI" `
-  --publisher "APImetrics" `
+  --publisher "APIContext" `
   --token <YOUR_GITHUB_PAT>
 ```
 
