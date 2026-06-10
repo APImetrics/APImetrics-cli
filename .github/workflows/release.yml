@@ -1,0 +1,442 @@
+name: Release
+
+on:
+  push:
+    tags:
+      # v0.* is intentional: prevents accidental production releases during
+      # initial development. Update to v* when ready to ship v1.0.
+      - v0.*
+  workflow_dispatch:
+    inputs:
+      snapshot:
+        description: 'Run goreleaser in --snapshot mode (developer build, no publish)'
+        required: false
+        type: boolean
+        default: false
+
+
+permissions:
+  contents: write
+  id-token: write  # required for Workload Identity Federation
+
+jobs:
+  release:
+    name: Build and publish release artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate dispatch inputs
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SNAPSHOT: ${{ inputs.snapshot }}
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/* ]] && [ "$SNAPSHOT" != "true" ]; then
+            echo "::error::Manual dispatch from a non-tag ref requires snapshot=true to avoid creating a broken release."
+            exit 1
+          fi
+
+      - name: Ensure mac signing secrets for tag releases
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          for var_name in APPLE_CERT_P12 APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!var_name}" ]; then
+              echo "::warning::$var_name secret not configured; macOS signing/finalization steps will be skipped."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Proceeding with Linux/Windows build only."
+          fi
+
+      - name: Run GoReleaser (Linux)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SNAPSHOT: ${{ inputs.snapshot }}
+        run: |
+          set -e
+          EXTRA=""
+          if [ "$SNAPSHOT" = "true" ]; then
+            EXTRA="--snapshot --skip homebrew"
+            echo "Running goreleaser in snapshot mode (no publish)"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            EXTRA="--skip publish,homebrew"
+            echo "Building artifacts without publishing; GitHub release and GCS upload deferred to finalization"
+          fi
+
+          docker run --rm \
+            -v "${PWD}:/workspace" \
+            -w /workspace \
+            -e GITHUB_TOKEN \
+            ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
+            release $EXTRA --clean --parallelism 2
+
+      - name: Create GitHub draft release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          if gh release view "$GITHUB_REF_NAME" &>/dev/null; then
+            echo "Draft release $GITHUB_REF_NAME already exists (rerun); re-uploading artifacts."
+            gh release upload "$GITHUB_REF_NAME" \
+              dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt \
+              --clobber
+          elif [ -f dist/CHANGELOG.md ]; then
+            gh release create "$GITHUB_REF_NAME" \
+              dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt \
+              --draft \
+              --notes-file dist/CHANGELOG.md
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt \
+              --draft \
+              --generate-notes
+          fi
+
+      - name: Upload release artifacts
+        if: ${{ inputs.snapshot != true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          if-no-files-found: error
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+            dist/artifacts.json
+            dist/metadata.json
+
+  release-macos:
+    name: Sign and notarize macOS artifacts
+    runs-on: macos-latest
+    needs: release
+    if: ${{ inputs.snapshot != true }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Check for Apple signing secrets
+        id: secrets_check
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+        run: |
+          if [ -n "$APPLE_CERT_P12" ]; then
+            echo "has_signing_cert=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signing_cert=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::APPLE_CERT_P12 not configured — skipping Apple code signing."
+          fi
+
+      - name: Import Apple certificate
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -e
+          for var_name in APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD; do
+            if [ -z "${!var_name}" ]; then
+              echo "::error::$var_name is required when APPLE_CERT_P12 is configured."
+              exit 1
+            fi
+          done
+
+          printf '%s' "$APPLE_CERT_P12" | base64 -D > cert.p12
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security import cert.p12 -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"' | xargs)
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist
+
+      - name: Sign and notarize macOS artifacts
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
+        run: |
+          set -e
+          for var_name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!var_name}" ]; then
+              echo "::error::$var_name is required for signing and notarization."
+              exit 1
+            fi
+          done
+          if [ ! -f dist/checksums.txt ]; then
+            echo "::error::dist/checksums.txt not found; expected macOS artifacts from Linux job."
+            exit 1
+          fi
+
+          for archive in dist/*-darwin-*.tar.gz; do
+            [ -f "$archive" ] || continue
+            tmpdir="$(mktemp -d)"
+            orig_members=$(tar -tzf "$archive")
+            tar -xzf "$archive" -C "$tmpdir"
+
+            while IFS= read -r -d '' bin; do
+              codesign --force --options runtime --timestamp \
+                --keychain "$KEYCHAIN_PATH" \
+                --sign "$APPLE_SIGNING_IDENTITY" "$bin"
+              codesign --verify --deep --strict "$bin"
+
+              # Notarize each binary via a zip (notarytool requires zip/dmg/pkg, not a raw binary)
+              zip_dir="$(mktemp -d)"
+              zip_path="$zip_dir/binary.zip"
+              zip -j "$zip_path" "$bin"
+              xcrun notarytool submit "$zip_path" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_ID_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait
+              rm -rf "$zip_dir"
+            done < <(find "$tmpdir" -type f -perm -111 -print0)
+
+            # shellcheck disable=SC2086
+            tar -czf "${archive}.signed" -C "$tmpdir" $orig_members
+            mv "${archive}.signed" "$archive"
+            rm -rf "$tmpdir"
+
+            filename="$(basename "$archive")"
+            sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+            grep -v "  $filename\$" dist/checksums.txt > dist/checksums.new || true
+            printf "%s  %s\n" "$sha" "$filename" >> dist/checksums.new
+            mv dist/checksums.new dist/checksums.txt
+
+            # Keep artifacts.json in sync with the signed checksums for archival accuracy.
+            PATCH_NAME="$filename" PATCH_SHA="$sha" python3 << 'PYEOF'
+          import json, os
+          data = json.load(open('dist/artifacts.json'))
+          name = os.environ['PATCH_NAME']
+          checksum = os.environ['PATCH_SHA']
+          for a in data:
+              if a.get('name') == name:
+                  a.setdefault('extra', {})['Checksum'] = 'sha256:' + checksum
+          with open('dist/artifacts.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          PYEOF
+          done
+
+      - name: Upload signed macOS artifacts
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-signed-artifacts
+          if-no-files-found: error
+          path: |
+            dist/*-darwin-amd64.tar.gz
+            dist/*-darwin-arm64.tar.gz
+            dist/checksums.txt
+
+      - name: Authenticate to Google Cloud
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.PRODUCTION_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.PRODUCTION_WORKLOAD_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload Linux and Windows artifacts to GCS
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          gsutil -m cp dist/*-linux-*.tar.gz dist/*-windows-*.zip "gs://apimetrics-cli/$VERSION/"
+
+      - name: Upload signed macOS artifacts to GCS
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          gsutil -m cp dist/*-darwin-*.tar.gz dist/checksums.txt "gs://apimetrics-cli/$VERSION/"
+
+      - name: Replace macOS assets on GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release upload "$GITHUB_REF_NAME" \
+            dist/*-darwin-amd64.tar.gz \
+            dist/*-darwin-arm64.tar.gz \
+            dist/checksums.txt \
+            --clobber
+
+      - name: Publish finalized GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+
+      - name: Generate Homebrew tap token
+        id: tap-token
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          repositories: homebrew-tap
+
+      - name: Publish Homebrew formula
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE_URL="https://storage.googleapis.com/apimetrics-cli/${VERSION}"
+          AMD64_FILE="apimetrics-${VERSION}-darwin-amd64.tar.gz"
+          ARM64_FILE="apimetrics-${VERSION}-darwin-arm64.tar.gz"
+
+          AMD64_SHA=$(awk -v f="${AMD64_FILE}" '$2 == f {print $1}' dist/checksums.txt)
+          ARM64_SHA=$(awk -v f="${ARM64_FILE}" '$2 == f {print $1}' dist/checksums.txt)
+
+          if [ -z "$AMD64_SHA" ] || [ -z "$ARM64_SHA" ]; then
+            echo "::error::Could not find darwin checksums in dist/checksums.txt"
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/APImetrics/homebrew-tap.git" tap-repo
+
+          cat > tap-repo/Formula/apimetrics.rb << FORMULA_END
+          # typed: false
+          # frozen_string_literal: true
+
+          class Apimetrics < Formula
+            desc "APImetrics CLI"
+            homepage "https://apimetrics.io"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_intel do
+                url "${BASE_URL}/${AMD64_FILE}"
+                sha256 "${AMD64_SHA}"
+              end
+              on_arm do
+                url "${BASE_URL}/${ARM64_FILE}"
+                sha256 "${ARM64_SHA}"
+              end
+            end
+
+            def install
+              bin.install "apimetrics"
+            end
+
+            test do
+              system "#{bin}/apimetrics", "--version"
+            end
+          end
+          FORMULA_END
+
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/apimetrics.rb
+          if git diff --cached --quiet; then
+            echo "Homebrew formula is already up to date."
+          else
+            git commit -m "apimetrics ${VERSION}"
+            git push
+          fi
+
+      - name: Clean up keychain and cert
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f cert.p12
+
+  release-winget:
+    name: Submit WinGet package update
+    runs-on: windows-latest
+    needs: release-macos
+    if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Check WinGet token
+        id: winget_check
+        shell: bash
+        env:
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          if [ -n "$WINGET_GITHUB_TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::WINGET_GITHUB_TOKEN not configured — skipping WinGet submission."
+          fi
+
+      - name: Check release is published
+        id: release_check
+        if: ${{ steps.winget_check.outputs.has_token == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          is_draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')
+          if [ "$is_draft" = "true" ]; then
+            echo "is_published=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub release $GITHUB_REF_NAME is still a draft (Apple signing secrets may not be configured) — skipping WinGet submission."
+          else
+            echo "is_published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Submit WinGet package update
+        if: ${{ steps.winget_check.outputs.has_token == 'true' && steps.release_check.outputs.is_published == 'true' }}
+        shell: pwsh
+        env:
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Requires APIContext.APImetricsCLI to already exist in microsoft/winget-pkgs.
+          # See RELEASING.md § 5 for the one-time manual submission required before this runs.
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $installerUrl = "https://storage.googleapis.com/apimetrics-cli/$version/apimetrics-$version-windows-amd64.zip"
+
+          Invoke-WebRequest -Uri "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe" -OutFile wingetcreate.exe
+          .\wingetcreate.exe update APIContext.APImetricsCLI `
+            --version $version `
+            --urls $installerUrl `
+            --submit `
+            --token $env:WINGET_GITHUB_TOKEN
