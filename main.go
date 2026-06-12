@@ -11,17 +11,9 @@ import (
 )
 
 var version string = "dev"
-var commit string
-var date string
 
-// Build-time API configuration — override with -ldflags at build time:
-//
-//	go build -ldflags "-X main.baseURL=https://client.apimetrics.io ..."
-var baseURL = "https://qc-client.apimetrics.io"
-var authURL = "https://qc-auth.apimetrics.io/authorize"
-var tokenURL = "https://qc-auth.apimetrics.io/oauth/token"
-var authAudience = "https://client.apimetrics.io"
-var clientID = "bj0yh0AjBMzfeOpffmCj5UP8FbmYDwcM"
+// baseURL, authURL, tokenURL, authAudience, clientID are defined in
+// config_qc.go (default) or config_prod.go (build tag: prod).
 
 func main() {
 	if version == "dev" {
