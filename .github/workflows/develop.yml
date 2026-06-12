@@ -51,7 +51,7 @@ jobs:
             dist/metadata.json
 
   sign-macos:
-    name: Sign and notarize macOS artifacts
+    name: Sign macOS artifacts
     runs-on: macos-latest
     needs: build
     timeout-minutes: 30
@@ -103,22 +103,17 @@ jobs:
           name: qc-artifacts-${{ github.run_number }}
           path: dist
 
-      - name: Sign and notarize macOS artifacts
+      - name: Sign macOS artifacts
         if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
         run: |
           set -e
-          for var_name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!var_name}" ]; then
-              echo "::error::$var_name is required for signing and notarization."
-              exit 1
-            fi
-          done
+          if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::error::APPLE_SIGNING_IDENTITY is required for signing."
+            exit 1
+          fi
           if [ ! -f dist/checksums.txt ]; then
             echo "::error::dist/checksums.txt not found."
             exit 1
@@ -135,16 +130,6 @@ jobs:
                 --keychain "$KEYCHAIN_PATH" \
                 --sign "$APPLE_SIGNING_IDENTITY" "$bin"
               codesign --verify --deep --strict "$bin"
-
-              zip_dir="$(mktemp -d)"
-              zip_path="$zip_dir/binary.zip"
-              zip -j "$zip_path" "$bin"
-              xcrun notarytool submit "$zip_path" \
-                --apple-id "$APPLE_ID" \
-                --password "$APPLE_ID_PASSWORD" \
-                --team-id "$APPLE_TEAM_ID" \
-                --wait
-              rm -rf "$zip_dir"
             done < <(find "$tmpdir" -type f -perm -111 -print0)
 
             # shellcheck disable=SC2086
