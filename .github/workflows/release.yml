@@ -134,9 +134,10 @@ jobs:
           fi
 
       - name: Upload release artifacts
+        if: ${{ inputs.snapshot != true }}
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.snapshot == true && 'qc-snapshot-artifacts' || 'release-artifacts' }}
+          name: release-artifacts
           if-no-files-found: error
           path: |
             dist/*.tar.gz
@@ -144,6 +145,56 @@ jobs:
             dist/checksums.txt
             dist/artifacts.json
             dist/metadata.json
+
+      # Snapshot (QC) builds: upload each asset as its own artifact so the
+      # Actions run lists them individually rather than as one combined zip.
+      - name: Upload QC snapshot — macOS (Intel)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-darwin-amd64
+          if-no-files-found: error
+          path: dist/*-darwin-amd64.tar.gz
+
+      - name: Upload QC snapshot — macOS (Apple Silicon)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-darwin-arm64
+          if-no-files-found: error
+          path: dist/*-darwin-arm64.tar.gz
+
+      - name: Upload QC snapshot — Linux (amd64)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-linux-amd64
+          if-no-files-found: error
+          path: dist/*-linux-amd64.tar.gz
+
+      - name: Upload QC snapshot — Linux (arm64)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-linux-arm64
+          if-no-files-found: error
+          path: dist/*-linux-arm64.tar.gz
+
+      - name: Upload QC snapshot — Windows (amd64)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-windows-amd64
+          if-no-files-found: error
+          path: dist/*-windows-amd64.zip
+
+      - name: Upload QC snapshot — checksums
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums.txt
+          if-no-files-found: error
+          path: dist/checksums.txt
 
   release-macos:
     name: Sign and notarize macOS artifacts
