@@ -92,9 +92,12 @@ jobs:
         run: |
           set -e
           EXTRA=""
+          CONFIG=".goreleaser/config.yaml"
           if [ "$SNAPSHOT" = "true" ]; then
+            # Snapshot builds are QC builds: QC endpoints, apimetrics-qc binary.
             EXTRA="--snapshot --skip homebrew"
-            echo "Running goreleaser in snapshot mode (no publish)"
+            CONFIG=".goreleaser/config-qc.yaml"
+            echo "Running goreleaser in snapshot mode (QC build, no publish)"
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             EXTRA="--skip publish,homebrew"
             echo "Building artifacts without publishing; GitHub release and GCS upload deferred to finalization"
@@ -105,7 +108,7 @@ jobs:
             -w /workspace \
             -e GITHUB_TOKEN \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
-            release $EXTRA --config .goreleaser/config.yaml --clean --parallelism 2
+            release $EXTRA --config "$CONFIG" --clean --parallelism 2
 
       - name: Create GitHub draft release
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
@@ -131,10 +134,9 @@ jobs:
           fi
 
       - name: Upload release artifacts
-        if: ${{ inputs.snapshot != true }}
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts
+          name: ${{ inputs.snapshot == true && 'qc-snapshot-artifacts' || 'release-artifacts' }}
           if-no-files-found: error
           path: |
             dist/*.tar.gz
