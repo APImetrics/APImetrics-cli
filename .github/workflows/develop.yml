@@ -36,7 +36,7 @@ jobs:
             -w /workspace \
             -e GITHUB_TOKEN \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
-            release --snapshot --config dist/config-qc.yaml --clean --parallelism 2
+            release --snapshot --config .goreleaser/config-qc.yaml --clean --parallelism 2
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
