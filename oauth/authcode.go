@@ -298,7 +298,10 @@ func (ac *AuthorizationCodeTokenSource) Token() (*oauth2.Token, error) {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "  "+authorizeURL.String())
 	fmt.Fprintln(os.Stderr, "")
-	if isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd()) {
+	// Only prompt interactively if stdin is a live terminal. If a file or
+	// command has been piped in it is likely the request body to use after
+	// auth, so we must not consume it here (see the manual-code path below).
+	if isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd()) {
 		fmt.Fprint(os.Stderr, "Open your browser now? [Y/n]: ")
 		reader := bufio.NewReader(os.Stdin)
 		answer, _ := reader.ReadString('\n')
