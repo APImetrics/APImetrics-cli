@@ -40,6 +40,9 @@ jobs:
       - name: Verify release branch
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # Tag pushes don't populate origin/* remote-tracking refs, so fetch
+            # the main branches explicitly before checking containment.
+            git fetch --quiet origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/main-*:refs/remotes/origin/main-*' || true
             # Allow main or a main- branch (e.g. main-hotfix) for emergency releases.
             if ! git branch -r --contains "$GITHUB_SHA" | grep -qE '^\s*origin/main($|-)'; then
               echo "::error::Tag $GITHUB_REF_NAME must be on the main branch (or a main- branch)."
