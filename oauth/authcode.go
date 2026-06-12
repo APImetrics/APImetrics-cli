@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"os"
@@ -233,7 +234,9 @@ func (h authHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.URL.Query().Get("error"); err != "" {
 		details := r.URL.Query().Get("error_description")
-		rendered := strings.Replace(strings.Replace(htmlError, "$ERROR", err, 1), "$DETAILS", details, 1)
+		// Escape the query params before interpolating into HTML to avoid
+		// reflected XSS via the localhost redirect URL.
+		rendered := strings.Replace(strings.Replace(htmlError, "$ERROR", html.EscapeString(err), 1), "$DETAILS", html.EscapeString(details), 1)
 		w.Write([]byte(rendered))
 		h.c <- ""
 		return
