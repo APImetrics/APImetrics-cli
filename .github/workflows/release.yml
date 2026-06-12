@@ -37,6 +37,19 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Verify release branch
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # Allow main or a main- branch (e.g. main-hotfix) for emergency releases.
+            if ! git branch -r --contains "$GITHUB_SHA" | grep -qE '^\s*origin/main($|-)'; then
+              echo "::error::Tag $GITHUB_REF_NAME must be on the main branch (or a main- branch)."
+              exit 1
+            fi
+          elif [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF" != refs/heads/main-* && "${{ inputs.snapshot }}" != "true" ]]; then
+            echo "::error::Release workflow must be dispatched from the main branch (or a main- branch, or use snapshot=true for ad-hoc builds)."
+            exit 1
+          fi
+
       - name: Validate dispatch inputs
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -89,7 +102,7 @@ jobs:
             -w /workspace \
             -e GITHUB_TOKEN \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
-            release $EXTRA --clean --parallelism 2
+            release $EXTRA --config dist/config.yaml --clean --parallelism 2
 
       - name: Create GitHub draft release
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
