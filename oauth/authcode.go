@@ -286,7 +286,7 @@ func (ac *AuthorizationCodeTokenSource) Token() (*oauth2.Token, error) {
 	}()
 
 	// Print welcome banner, show login URL, and ask before opening browser.
-	fmt.Fprintln(os.Stderr, `
+	fmt.Fprint(os.Stderr, `
     _   ___ ___           _       _
    /_\ | _ \_ _|_ __  ___| |_ _ _(_)__ ___
   / _ \|  _/| || '  \/ -_|  _| '_| / _(_-<
