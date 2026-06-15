@@ -37,6 +37,22 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Verify release branch
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # Tag pushes don't populate origin/* remote-tracking refs, so fetch
+            # the main branches explicitly before checking containment.
+            git fetch --quiet origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/main-*:refs/remotes/origin/main-*' || true
+            # Allow main or a main- branch (e.g. main-hotfix) for emergency releases.
+            if ! git branch -r --contains "$GITHUB_SHA" | grep -qE '^\s*origin/main($|-)'; then
+              echo "::error::Tag $GITHUB_REF_NAME must be on the main branch (or a main- branch)."
+              exit 1
+            fi
+          elif [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF" != refs/heads/main-* && "${{ inputs.snapshot }}" != "true" ]]; then
+            echo "::error::Release workflow must be dispatched from the main branch (or a main- branch, or use snapshot=true for ad-hoc builds)."
+            exit 1
+          fi
+
       - name: Validate dispatch inputs
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -76,9 +92,12 @@ jobs:
         run: |
           set -e
           EXTRA=""
+          CONFIG=".goreleaser/config.yaml"
           if [ "$SNAPSHOT" = "true" ]; then
+            # Snapshot builds are QC builds: QC endpoints, apimetrics-qc binary.
             EXTRA="--snapshot --skip homebrew"
-            echo "Running goreleaser in snapshot mode (no publish)"
+            CONFIG=".goreleaser/config-qc.yaml"
+            echo "Running goreleaser in snapshot mode (QC build, no publish)"
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             EXTRA="--skip publish,homebrew"
             echo "Building artifacts without publishing; GitHub release and GCS upload deferred to finalization"
@@ -89,7 +108,7 @@ jobs:
             -w /workspace \
             -e GITHUB_TOKEN \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
-            release $EXTRA --clean --parallelism 2
+            release $EXTRA --config "$CONFIG" --clean --parallelism 2
 
       - name: Create GitHub draft release
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
@@ -127,11 +146,60 @@ jobs:
             dist/artifacts.json
             dist/metadata.json
 
+      # Snapshot (QC) builds: upload each asset as its own artifact so the
+      # Actions run lists them individually rather than as one combined zip.
+      - name: Upload QC snapshot — macOS (Intel)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-darwin-amd64
+          if-no-files-found: error
+          path: dist/*-darwin-amd64.tar.gz
+
+      - name: Upload QC snapshot — macOS (Apple Silicon)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-darwin-arm64
+          if-no-files-found: error
+          path: dist/*-darwin-arm64.tar.gz
+
+      - name: Upload QC snapshot — Linux (amd64)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-linux-amd64
+          if-no-files-found: error
+          path: dist/*-linux-amd64.tar.gz
+
+      - name: Upload QC snapshot — Linux (arm64)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-linux-arm64
+          if-no-files-found: error
+          path: dist/*-linux-arm64.tar.gz
+
+      - name: Upload QC snapshot — Windows (amd64)
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-windows-amd64
+          if-no-files-found: error
+          path: dist/*-windows-amd64.zip
+
+      - name: Upload QC snapshot — checksums
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums.txt
+          if-no-files-found: error
+          path: dist/checksums.txt
+
   release-macos:
     name: Sign and notarize macOS artifacts
     runs-on: macos-latest
     needs: release
-    if: ${{ inputs.snapshot != true }}
     timeout-minutes: 30
 
     steps:
@@ -176,9 +244,19 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"' | xargs)
 
       - name: Download release artifacts
+        if: ${{ inputs.snapshot != true }}
         uses: actions/download-artifact@v4
         with:
           name: release-artifacts
+          path: dist
+
+      # Snapshot builds upload each asset as its own artifact; pull them all
+      # back (flattened) so the signing step finds the darwin archives.
+      - name: Download QC snapshot artifacts
+        if: ${{ inputs.snapshot == true }}
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
           path: dist
 
       - name: Sign and notarize macOS artifacts
@@ -237,7 +315,9 @@ jobs:
             printf "%s  %s\n" "$sha" "$filename" >> dist/checksums.new
             mv dist/checksums.new dist/checksums.txt
 
-            # Keep artifacts.json in sync with the signed checksums for archival accuracy.
+            # Keep artifacts.json in sync with the signed checksums for archival
+            # accuracy. Only present for full releases, not snapshot builds.
+            if [ -f dist/artifacts.json ]; then
             PATCH_NAME="$filename" PATCH_SHA="$sha" python3 << 'PYEOF'
           import json, os
           data = json.load(open('dist/artifacts.json'))
@@ -249,10 +329,11 @@ jobs:
           with open('dist/artifacts.json', 'w') as f:
               json.dump(data, f, indent=2)
           PYEOF
+            fi
           done
 
       - name: Upload signed macOS artifacts
-        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' && inputs.snapshot != true }}
         uses: actions/upload-artifact@v4
         with:
           name: macos-signed-artifacts
@@ -261,6 +342,35 @@ jobs:
             dist/*-darwin-amd64.tar.gz
             dist/*-darwin-arm64.tar.gz
             dist/checksums.txt
+
+      # Snapshot builds: replace the unsigned darwin placeholders uploaded by
+      # the build job with the signed archives, listed as individual assets.
+      - name: Upload signed QC snapshot — macOS (Intel)
+        if: ${{ inputs.snapshot == true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-darwin-amd64
+          overwrite: true
+          if-no-files-found: error
+          path: dist/*-darwin-amd64.tar.gz
+
+      - name: Upload signed QC snapshot — macOS (Apple Silicon)
+        if: ${{ inputs.snapshot == true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: apimetrics-qc-darwin-arm64
+          overwrite: true
+          if-no-files-found: error
+          path: dist/*-darwin-arm64.tar.gz
+
+      - name: Upload signed QC snapshot — checksums
+        if: ${{ inputs.snapshot == true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums.txt
+          overwrite: true
+          if-no-files-found: error
+          path: dist/checksums.txt
 
       - name: Authenticate to Google Cloud
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
