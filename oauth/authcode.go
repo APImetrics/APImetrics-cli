@@ -16,8 +16,8 @@ import (
 
 	"context"
 
-	"github.com/mattn/go-isatty"
 	"apicontext.com/apimetrics/cli"
+	"github.com/mattn/go-isatty"
 	"golang.org/x/oauth2"
 )
 
@@ -285,10 +285,33 @@ func (ac *AuthorizationCodeTokenSource) Token() (*oauth2.Token, error) {
 		}
 	}()
 
-	// Open auth URL in browser, print for manual use in case open fails.
-	fmt.Fprintln(os.Stderr, "Open your browser to log in using the URL:")
-	fmt.Fprintln(os.Stderr, authorizeURL.String())
-	open(authorizeURL.String())
+	// Print welcome banner, show login URL, and ask before opening browser.
+	fmt.Fprint(os.Stderr, `
+    _   ___ ___           _       _
+   /_\ | _ \_ _|_ __  ___| |_ _ _(_)__ ___
+  / _ \|  _/| || '  \/ -_|  _| '_| / _(_-<
+ /_/ \_\_| |___|_|_|_\___|\__|_| |_\__/__/
+`)
+	fmt.Fprintln(os.Stderr, "Welcome to APImetrics CLI!")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "To log in, open the following URL in your browser:")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "  "+authorizeURL.String())
+	fmt.Fprintln(os.Stderr, "")
+	// Only prompt interactively if stdin is a live terminal. If a file or
+	// command has been piped in it is likely the request body to use after
+	// auth, so we must not consume it here (see the manual-code path below).
+	if isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		fmt.Fprint(os.Stderr, "Open your browser now? [Y/n]: ")
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer == "" || answer == "y" || answer == "yes" {
+			open(authorizeURL.String())
+		}
+	} else {
+		open(authorizeURL.String())
+	}
 
 	// Provide a way to manually enter the code, e.g. for remote SSH sessions.
 	// Only read from stdin if it is a live terminal, if a file or command has
