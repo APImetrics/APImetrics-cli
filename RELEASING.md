@@ -6,8 +6,10 @@ This document covers the one-time infrastructure setup required to run the relea
 
 Pushing a `v0.x.y` tag triggers the release workflow (`.github/workflows/release.yml`), which:
 
-1. **Linux job** — cross-compiles all platform binaries inside `goreleaser-cross` (Docker), builds archives, and creates a GitHub draft release.
-2. **macOS job** — signs and notarizes the Darwin binaries using an Apple Developer certificate, re-archives them, uploads all artifacts to GCS, replaces the macOS assets on the draft release, publishes the release, then updates the Homebrew tap formula.
+1. **Linux job** — cross-compiles all platform binaries inside `goreleaser-cross` (Docker), builds archives, and creates a GitHub draft release with the Linux and Windows assets.
+2. **macOS job** — signs and notarizes the Darwin binaries using an Apple Developer certificate, re-archives them, replaces the macOS assets on the draft release, publishes the release, then updates the Homebrew tap formula.
+
+All binaries are distributed as **GitHub release assets** — Homebrew and WinGet download directly from `https://github.com/APImetrics/APImetrics-cli/releases/download/<tag>/`.
 
 Snapshot builds (no publish) can be triggered via `workflow_dispatch` with `snapshot: true`.
 
@@ -15,77 +17,11 @@ Snapshot builds (no publish) can be triggered via `workflow_dispatch` with `snap
 
 ## One-time infrastructure setup
 
-### 1. Google Cloud — Workload Identity Federation
+> Binaries are distributed as GitHub release assets, so **the repository must be
+> public** (or the download URLs used by Homebrew/WinGet must otherwise be
+> reachable by end users). No cloud storage or service-account setup is required.
 
-The workflow authenticates to GCP without a stored service account key using Workload Identity Federation (WIF). Set this up once per GCP project.
-
-```bash
-PROJECT_ID=your-gcp-project
-POOL_NAME=github-actions
-PROVIDER_NAME=github
-SA_NAME=apimetrics-cli-release
-BUCKET=apimetrics-cli
-REPO=APImetrics/APImetrics-cli
-
-# Create the workload identity pool
-gcloud iam workload-identity-pools create "$POOL_NAME" \
-  --project="$PROJECT_ID" \
-  --location=global \
-  --display-name="GitHub Actions"
-
-# Create the OIDC provider
-gcloud iam workload-identity-pools providers create-oidc "$PROVIDER_NAME" \
-  --project="$PROJECT_ID" \
-  --location=global \
-  --workload-identity-pool="$POOL_NAME" \
-  --display-name="GitHub" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-  --issuer-uri="https://token.actions.githubusercontent.com"
-
-# Create the service account
-gcloud iam service-accounts create "$SA_NAME" \
-  --project="$PROJECT_ID" \
-  --display-name="APImetrics CLI release"
-
-# Grant it write access to the GCS bucket
-gsutil iam ch "serviceAccount:${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com:roles/storage.objectAdmin" \
-  "gs://$BUCKET"
-
-# Allow the GitHub repo to impersonate the service account
-POOL_ID=$(gcloud iam workload-identity-pools describe "$POOL_NAME" \
-  --project="$PROJECT_ID" --location=global --format="value(name)")
-
-gcloud iam service-accounts add-iam-policy-binding \
-  "${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --project="$PROJECT_ID" \
-  --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/${POOL_ID}/attribute.repository/${REPO}"
-```
-
-Then retrieve the values to store as secrets:
-
-```bash
-# Workload identity provider (store as PRODUCTION_WORKLOAD_IDENTITY_PROVIDER)
-gcloud iam workload-identity-pools providers describe "$PROVIDER_NAME" \
-  --project="$PROJECT_ID" \
-  --location=global \
-  --workload-identity-pool="$POOL_NAME" \
-  --format="value(name)"
-
-# Service account email (store as PRODUCTION_WORKLOAD_SERVICE_ACCOUNT)
-echo "${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-```
-
-**Secrets to add to `APImetrics/APImetrics-cli`:**
-
-| Secret | Value |
-|--------|-------|
-| `PRODUCTION_WORKLOAD_IDENTITY_PROVIDER` | Full provider resource name (`projects/.../providers/github`) |
-| `PRODUCTION_WORKLOAD_SERVICE_ACCOUNT` | Service account email (`apimetrics-cli-release@….iam.gserviceaccount.com`) |
-
----
-
-### 2. GitHub App — Homebrew tap access
+### 1. GitHub App — Homebrew tap access
 
 The workflow uses a GitHub App to push formula updates to `APImetrics/homebrew-tap`. This avoids a long-lived personal access token.
 
@@ -107,7 +43,7 @@ The workflow uses a GitHub App to push formula updates to `APImetrics/homebrew-t
 
 ---
 
-### 3. Apple code signing and notarization
+### 2. Apple code signing and notarization
 
 macOS binaries must be signed and notarized with an Apple Developer ID certificate so they run without Gatekeeper warnings.
 
@@ -136,17 +72,17 @@ base64 -i certificate.p12 | pbcopy   # copies base64 to clipboard
 
 ---
 
-### 4. Homebrew tap repository
+### 3. Homebrew tap repository
 
 The Homebrew formula is pushed to `APImetrics/homebrew-tap`. Ensure:
 
 - The repository exists.
 - A `Formula/` directory exists in the repository root (create it with a `.gitkeep` if needed — the release workflow will create `Formula/apimetrics.rb` on first release).
-- The GitHub App from step 2 is installed on this repository.
+- The GitHub App from step 1 is installed on this repository.
 
 ---
 
-### 5. WinGet package
+### 4. WinGet package
 
 The workflow uses `wingetcreate` to submit a PR to [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) after each release, keeping the Windows Package Manager entry up to date.
 
@@ -159,7 +95,7 @@ The package must exist in `microsoft/winget-pkgs` before automated updates can r
 Invoke-WebRequest -Uri "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe" -OutFile wingetcreate.exe
 
 $version = "0.1.0"  # set to the first published version
-$installerUrl = "https://storage.googleapis.com/apimetrics-cli/$version/apimetrics-$version-windows-amd64.zip"
+$installerUrl = "https://github.com/APImetrics/APImetrics-cli/releases/download/v$version/apimetrics-$version-windows-amd64.zip"
 
 .\wingetcreate.exe new $installerUrl `
   --id APIContext.APImetricsCLI `
@@ -192,8 +128,6 @@ All secrets required on `APImetrics/APImetrics-cli`:
 
 | Secret | Purpose |
 |--------|---------|
-| `PRODUCTION_WORKLOAD_IDENTITY_PROVIDER` | WIF provider for GCS uploads |
-| `PRODUCTION_WORKLOAD_SERVICE_ACCOUNT` | GCP service account email for GCS uploads |
 | `GH_APP_ID` | GitHub App ID for Homebrew tap access |
 | `GH_APP_PRIVATE_KEY` | GitHub App private key for Homebrew tap access |
 | `APPLE_CERT_P12` | Base64 Apple Developer ID certificate |

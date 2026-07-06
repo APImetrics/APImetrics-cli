@@ -206,11 +206,6 @@ checksum:
   algorithm: sha256
 docker_digest:
   name_template: digests.txt
-blobs:
-  - bucket: apimetrics-cli
-    provider: gs
-    directory: '{{ .Version }}'
-    content_disposition: attachment;filename={{.Filename}}
 changelog:
   filters:
     exclude:
