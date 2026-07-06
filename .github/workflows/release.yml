@@ -514,7 +514,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           # Requires APIContext.APImetricsCLI to already exist in microsoft/winget-pkgs.
-          # See RELEASING.md § 5 for the one-time manual submission required before this runs.
+          # See RELEASING.md § 4 ("WinGet package") for the one-time manual submission required before this runs.
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $installerUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/apimetrics-$version-windows-amd64.zip"
 
