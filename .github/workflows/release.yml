@@ -16,8 +16,7 @@ on:
 
 
 permissions:
-  contents: write
-  id-token: write  # required for Workload Identity Federation
+  contents: write  # required to create releases and upload assets
 
 jobs:
   release:
@@ -372,31 +371,6 @@ jobs:
           if-no-files-found: error
           path: dist/checksums.txt
 
-      - name: Authenticate to Google Cloud
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.PRODUCTION_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.PRODUCTION_WORKLOAD_SERVICE_ACCOUNT }}
-
-      - name: Set up Cloud SDK
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Upload Linux and Windows artifacts to GCS
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        run: |
-          set -e
-          VERSION="${GITHUB_REF_NAME#v}"
-          gsutil -m cp dist/*-linux-*.tar.gz dist/*-windows-*.zip "gs://apimetrics-cli/$VERSION/"
-
-      - name: Upload signed macOS artifacts to GCS
-        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
-        run: |
-          set -e
-          VERSION="${GITHUB_REF_NAME#v}"
-          gsutil -m cp dist/*-darwin-*.tar.gz dist/checksums.txt "gs://apimetrics-cli/$VERSION/"
-
       - name: Replace macOS assets on GitHub release
         if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         env:
@@ -433,7 +407,7 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          BASE_URL="https://storage.googleapis.com/apimetrics-cli/${VERSION}"
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
           AMD64_FILE="apimetrics-${VERSION}-darwin-amd64.tar.gz"
           ARM64_FILE="apimetrics-${VERSION}-darwin-arm64.tar.gz"
 
@@ -540,9 +514,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           # Requires APIContext.APImetricsCLI to already exist in microsoft/winget-pkgs.
-          # See RELEASING.md § 5 for the one-time manual submission required before this runs.
+          # See RELEASING.md § 4 ("WinGet package") for the one-time manual submission required before this runs.
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          $installerUrl = "https://storage.googleapis.com/apimetrics-cli/$version/apimetrics-$version-windows-amd64.zip"
+          $installerUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/apimetrics-$version-windows-amd64.zip"
 
           Invoke-WebRequest -Uri "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe" -OutFile wingetcreate.exe
           .\wingetcreate.exe update APIContext.APImetricsCLI `
