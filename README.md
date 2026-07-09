@@ -1,6 +1,10 @@
 # APImetrics CLI
 
-A command-line interface for managing API monitors, schedules, SLOs, and more on the [APImetrics](https://apimetrics.io) platform.
+A command-line interface for managing API monitors, schedules, SLOs, and more on the [APImetrics](https://apimetrics.io) platform, by [APIContext Inc](https://apicontext.com).
+
+## Documentation
+
+For more information, please visit our main documentation site, available at [https://docs.apicontext.com/cli](https://docs.apicontext.com/cli).
 
 ## Getting Started
 
