@@ -6,6 +6,42 @@ A command-line interface for managing API monitors, schedules, SLOs, and more on
 
 For more information, please visit our main documentation site, available at [https://docs.apicontext.com/cli](https://docs.apicontext.com/cli).
 
+
+## Installation
+
+## Manual installation
+
+The binaries for the APImetrics CLI can be downloaded from the [releases page](https://github.com/APImetrics/APImetrics-cli/releases). Choose the appropriate version for your operating system and put the executable in your path for easy access from the command line.
+
+## MacOS
+
+You can install the APImetrics CLI using Homebrew:
+
+```bash
+brew install apicontext/tap/apimetrics-cli
+```
+
+## Windows - Coming soon!
+
+> Note: Coming soon, not available yet
+
+You can install the APImetrics CLI using the Windows Package Manager (winget):
+
+```powershell
+winget install APImetrics.APImetricsCLI
+```
+
+## Linux
+
+You can install the APImetrics CLI by downloading the binary from the [releases page](https://github.com/APImetrics/APImetrics-cli/releases).
+
+```bash
+curl -LO https://github.com/APImetrics/APImetrics-cli/releases/latest/download/apimetrics-[version]-linux-amd64.tar.gz
+tar -xzf apimetrics-[version]-linux-amd64.tar.gz
+sudo mv apimetrics /usr/local/bin/apimetrics
+```
+Note: [version] should be replaced with the specific version you want to download, e.g., `0.0.1`.
+
 ## Getting Started
 
 ### 1. Log in
@@ -186,3 +222,11 @@ apimetrics logout
 ```
 
 This removes cached tokens. Run `apimetrics login` again to re-authenticate.
+
+# Issues and Contributing
+
+For support questions, visit [APImetrics Support](https://apicontext.com/support) and open a request.
+
+For reporting bugs or requesting features, please open an issue on the [GitHub repository](https://github.com/APImetrics/APImetrics-cli/issues).
+
+We welcome contributions! Feel free to fork the repository, make changes, and submit pull requests.
