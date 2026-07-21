@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,6 +84,8 @@ func Init(name string, version string) {
 
 	Formatter = NewDefaultFormatter(tty, useColor)
 
+	cobra.AddTemplateFunc("versionExtra", versionExtraInfo)
+
 	cobra.AddTemplateFunc("highlight", func(s string) string {
 		// Highlighting is expensive, so only do this when the user actually asks
 		// for help via this template func and a custom help template.
@@ -121,6 +124,9 @@ func Init(name string, version string) {
 	Root.SetHelpTemplate(`{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces | highlight}}
 
 {{end}}{{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`)
+	Root.SetVersionTemplate(`{{with .Name}}{{printf "%s " .}}{{end}}{{printf "version %s" .Version}}
+{{versionExtra}}
+`)
 
 	GlobalFlags = pflag.NewFlagSet("eager-flags", pflag.ContinueOnError)
 	GlobalFlags.ParseErrorsWhitelist.UnknownFlags = true
@@ -358,6 +364,13 @@ func Run() (returnErr error) {
 		enableVerbose = true
 	}
 
+	// `--version` is a reporting command used for support/debugging, so it
+	// must work even when the API is unreachable. Report the cached spec state
+	// from disk rather than triggering a network load (which would also prompt
+	// for auth). Cobra's version flag is `--version` only; the `-v` shorthand
+	// is taken by `rsh-verbose`.
+	wantVersion := slices.Contains(os.Args[1:], "--version")
+
 	// Load all configured API operations directly onto the root command.
 	for name, cfg := range configs {
 		currentConfig = cfg
@@ -368,6 +381,10 @@ func Run() (returnErr error) {
 		}
 		if currentBase == "" {
 			continue
+		}
+		if wantVersion {
+			// Skip the network load; versionExtraInfo reads the on-disk cache.
+			break
 		}
 		api, err := Load(currentBase, Root)
 		if err != nil {
