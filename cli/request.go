@@ -79,6 +79,7 @@ type requestConfig struct {
 	disableLog      bool
 	ignoreStatus    bool
 	ignoreCLIParams bool
+	ignoreAuth      bool
 }
 
 type requestOption func(*requestConfig)
@@ -108,6 +109,15 @@ func IgnoreStatus() requestOption {
 func IgnoreCLIParams() requestOption {
 	return func(conf *requestConfig) {
 		conf.ignoreCLIParams = true
+	}
+}
+
+// IgnoreAuth skips applying the profile's auth to the request. Used when
+// fetching the (public) API description so that loading the command tree
+// never triggers an interactive login.
+func IgnoreAuth() requestOption {
+	return func(conf *requestConfig) {
+		conf.ignoreAuth = true
 	}
 }
 
@@ -236,7 +246,7 @@ func MakeRequest(req *http.Request, options ...requestOption) (*http.Response, e
 	}
 
 	// Add auth if needed.
-	if profile.Auth != nil && profile.Auth.Name != "" {
+	if !requestConf.ignoreAuth && profile.Auth != nil && profile.Auth.Name != "" {
 		auth, ok := authHandlers[profile.Auth.Name]
 		if ok {
 			err := auth.OnRequest(req, name+":"+viper.GetString("rsh-profile"), profile.Auth.Params)

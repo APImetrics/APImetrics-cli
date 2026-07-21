@@ -246,7 +246,7 @@ func Load(entrypoint string, root *cobra.Command) (API, error) {
 	// the parsed API cache, but do want to use a cached response from
 	// the server.
 	client := &http.Client{Transport: InvalidateCachedTransport()}
-	httpResp, err := MakeRequest(req, WithClient(client), IgnoreCLIParams())
+	httpResp, err := MakeRequest(req, WithClient(client), IgnoreCLIParams(), IgnoreAuth())
 	if err != nil {
 		return API{}, err
 	}
@@ -286,7 +286,7 @@ func Load(entrypoint string, root *cobra.Command) (API, error) {
 			return API{}, err
 		}
 
-		resp, err := MakeRequest(req, WithClient(client), IgnoreCLIParams())
+		resp, err := MakeRequest(req, WithClient(client), IgnoreCLIParams(), IgnoreAuth())
 		if err != nil {
 			return API{}, err
 		}
