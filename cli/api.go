@@ -117,10 +117,10 @@ func cacheAPI(name string, api *API) {
 }
 
 // versionExtraInfo returns the extra lines shown by `--version`: the cached
-// OpenAPI document version and the date/time the spec was last fetched from
-// the server. It reads the on-disk cache directly (rather than requiring a
-// successful load) so it still works when the machine is offline. The cache is
-// only trusted when it was written by the current CLI version, mirroring the
+// OpenAPI document version and the date/time the spec was last refreshed
+// (fetched from the server or loaded from configured spec_files). It reads the
+// on-disk cache directly (rather than requiring a successful load) so it still
+// works when the machine is offline. The cache is only trusted when it was written by the current CLI version, mirroring the
 // validity check in Load, so `--version` never reports a spec that the CLI
 // would otherwise refetch (e.g. after a binary upgrade).
 func versionExtraInfo() string {
