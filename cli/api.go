@@ -116,31 +116,30 @@ func cacheAPI(name string, api *API) {
 	}
 }
 
-// versionExtraInfo returns the extra lines shown by `--version`: the loaded
+// versionExtraInfo returns the extra lines shown by `--version`: the cached
 // OpenAPI document version and the date/time the spec was last fetched from
-// the server. It reads independently of a successful load (falling back to the
-// on-disk cache) so it still works when the machine is offline or the spec
-// fetch failed.
+// the server. It reads the on-disk cache directly (rather than requiring a
+// successful load) so it still works when the machine is offline. The cache is
+// only trusted when it was written by the current CLI version, mirroring the
+// validity check in Load, so `--version` never reports a spec that the CLI
+// would otherwise refetch (e.g. after a binary upgrade).
 func versionExtraInfo() string {
-	name := viper.GetString("api-name")
+	specVer := "unknown"
+	checked := "never"
 
-	specVer := LoadedAPI.SpecVersion
-	if specVer == "" && name != "" {
+	if name := viper.GetString("api-name"); name != "" {
 		filename := filepath.Join(getCacheDir(), name+".cbor")
 		if data, err := os.ReadFile(filename); err == nil {
 			var cached API
-			if err := cbor.Unmarshal(data, &cached); err == nil {
-				specVer = cached.SpecVersion
+			if err := cbor.Unmarshal(data, &cached); err == nil && cached.CLIVersion == Root.Version {
+				if cached.SpecVersion != "" {
+					specVer = cached.SpecVersion
+				}
+				if t := Cache.GetTime(name + ".checked"); !t.IsZero() {
+					checked = t.Local().Format("2006-01-02 15:04:05 MST")
+				}
 			}
 		}
-	}
-	if specVer == "" {
-		specVer = "unknown"
-	}
-
-	checked := "never"
-	if t := Cache.GetTime(name + ".checked"); !t.IsZero() {
-		checked = t.Local().Format("2006-01-02 15:04:05 MST")
 	}
 
 	return fmt.Sprintf("API spec version: %s\nSpec last updated:  %s", specVer, checked)
