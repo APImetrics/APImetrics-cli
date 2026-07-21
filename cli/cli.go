@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
-	"slices"
 	"strings"
 	"time"
 
@@ -135,6 +134,10 @@ func Init(name string, version string) {
 	// Ensure parsing doesn't stop if the help flag is set
 	// (help seems to be special cased from ParseErrorsWhitelist.UnknownFlags)
 	GlobalFlags.BoolP("help", "h", false, "")
+	// Mirror Cobra's auto-registered version flag here so we can detect it
+	// during the eager parse below, before the command tree is loaded. This
+	// handles every bool form (`--version`, `--version=true`, `--version=false`).
+	GlobalFlags.Bool("version", false, "")
 
 	AddGlobalFlag("rsh-verbose", "v", "Enable verbose log output", false, false)
 	AddGlobalFlag("rsh-output-format", "o", "Output format [auto, json, table, ...]", "auto", false)
@@ -367,9 +370,9 @@ func Run() (returnErr error) {
 	// `--version` is a reporting command used for support/debugging, so it
 	// must work even when the API is unreachable. Report the cached spec state
 	// from disk rather than triggering a network load (which would also prompt
-	// for auth). Cobra's version flag is `--version` only; the `-v` shorthand
-	// is taken by `rsh-verbose`.
-	wantVersion := slices.Contains(os.Args[1:], "--version")
+	// for auth). Cobra prints the version for `--version`/`--version=true`; the
+	// `-v` shorthand is taken by `rsh-verbose`.
+	wantVersion, _ := GlobalFlags.GetBool("version")
 
 	// Load all configured API operations directly onto the root command.
 	for name, cfg := range configs {
