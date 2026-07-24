@@ -90,6 +90,36 @@ func TestAuthHookFailure(t *testing.T) {
 	})
 }
 
+func TestIgnoreAuth(t *testing.T) {
+	defer gock.Off()
+	gock.New("http://ignore-auth.example.com").
+		Get("/test").
+		Reply(200).
+		JSON(map[string]any{"ok": true})
+
+	viper.Set("rsh-profile", "default")
+	configs["ignore-auth"] = &APIConfig{
+		Base: "http://ignore-auth.example.com",
+		Profiles: map[string]*APIProfile{
+			"default": {
+				Auth: &APIAuth{
+					Name: "hook-fail",
+				},
+			},
+		},
+	}
+	authHandlers["hook-fail"] = &authHookFailure{}
+
+	r, _ := http.NewRequest(http.MethodGet, "http://ignore-auth.example.com/test", nil)
+	// The auth hook would panic (see TestAuthHookFailure); IgnoreAuth must skip
+	// it so loading the (public) API description never triggers a login.
+	assert.NotPanics(t, func() {
+		resp, err := MakeRequest(r, IgnoreAuth())
+		assert.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode)
+	})
+}
+
 func TestGetStatus(t *testing.T) {
 	defer gock.Off()
 

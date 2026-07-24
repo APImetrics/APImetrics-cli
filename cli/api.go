@@ -28,6 +28,7 @@ var LoadedAPI API
 // a Loader and cached by the CLI in-between runs when possible.
 type API struct {
 	CLIVersion     string      `json:"cli_version" yaml:"cli_version"`
+	SpecVersion    string      `json:"spec_version,omitempty" yaml:"spec_version,omitempty"`
 	Short          string      `json:"short" yaml:"short"`
 	Long           string      `json:"long,omitempty" yaml:"long,omitempty"`
 	Operations     []Operation `json:"operations,omitempty" yaml:"operations,omitempty"`
@@ -44,6 +45,10 @@ func (a *API) Merge(other API) {
 
 	if a.Long == "" {
 		a.Long = other.Long
+	}
+
+	if a.SpecVersion == "" {
+		a.SpecVersion = other.SpecVersion
 	}
 
 	a.Operations = append(a.Operations, other.Operations...)
@@ -98,6 +103,7 @@ func cacheAPI(name string, api *API) {
 	}
 
 	Cache.Set(name+".expires", time.Now().Add(24*time.Hour))
+	Cache.Set(name+".checked", time.Now())
 	Cache.WriteConfig()
 
 	b, err := cbor.Marshal(api)
@@ -108,6 +114,35 @@ func cacheAPI(name string, api *API) {
 	if err := os.WriteFile(filename, b, 0o600); err != nil {
 		LogError("Could not write API cache %s", err)
 	}
+}
+
+// versionExtraInfo returns the extra lines shown by `--version`: the cached
+// OpenAPI document version and the date/time the spec was last refreshed
+// (fetched from the server or loaded from configured spec_files). It reads the
+// on-disk cache directly (rather than requiring a successful load) so it still
+// works when the machine is offline. The cache is only trusted when it was written by the current CLI version, mirroring the
+// validity check in Load, so `--version` never reports a spec that the CLI
+// would otherwise refetch (e.g. after a binary upgrade).
+func versionExtraInfo() string {
+	specVer := "unknown"
+	checked := "never"
+
+	if name := viper.GetString("api-name"); name != "" {
+		filename := filepath.Join(getCacheDir(), name+".cbor")
+		if data, err := os.ReadFile(filename); err == nil {
+			var cached API
+			if err := cbor.Unmarshal(data, &cached); err == nil && cached.CLIVersion == Root.Version {
+				if cached.SpecVersion != "" {
+					specVer = cached.SpecVersion
+				}
+				if t := Cache.GetTime(name + ".checked"); !t.IsZero() {
+					checked = t.Local().Format("2006-01-02 15:04:05 MST")
+				}
+			}
+		}
+	}
+
+	return fmt.Sprintf("API spec version: %s\nSpec last updated:  %s", specVer, checked)
 }
 
 // Load will hydrate the command tree for an API, possibly refreshing the
@@ -211,7 +246,7 @@ func Load(entrypoint string, root *cobra.Command) (API, error) {
 	// the parsed API cache, but do want to use a cached response from
 	// the server.
 	client := &http.Client{Transport: InvalidateCachedTransport()}
-	httpResp, err := MakeRequest(req, WithClient(client), IgnoreCLIParams())
+	httpResp, err := MakeRequest(req, WithClient(client), IgnoreCLIParams(), IgnoreAuth())
 	if err != nil {
 		return API{}, err
 	}
@@ -251,7 +286,7 @@ func Load(entrypoint string, root *cobra.Command) (API, error) {
 			return API{}, err
 		}
 
-		resp, err := MakeRequest(req, WithClient(client), IgnoreCLIParams())
+		resp, err := MakeRequest(req, WithClient(client), IgnoreCLIParams(), IgnoreAuth())
 		if err != nil {
 			return API{}, err
 		}

@@ -83,6 +83,8 @@ func Init(name string, version string) {
 
 	Formatter = NewDefaultFormatter(tty, useColor)
 
+	cobra.AddTemplateFunc("versionExtra", versionExtraInfo)
+
 	cobra.AddTemplateFunc("highlight", func(s string) string {
 		// Highlighting is expensive, so only do this when the user actually asks
 		// for help via this template func and a custom help template.
@@ -121,6 +123,9 @@ func Init(name string, version string) {
 	Root.SetHelpTemplate(`{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces | highlight}}
 
 {{end}}{{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`)
+	Root.SetVersionTemplate(`{{with .Name}}{{printf "%s " .}}{{end}}{{printf "version %s" .Version}}
+{{versionExtra}}
+`)
 
 	GlobalFlags = pflag.NewFlagSet("eager-flags", pflag.ContinueOnError)
 	GlobalFlags.ParseErrorsWhitelist.UnknownFlags = true
@@ -129,6 +134,10 @@ func Init(name string, version string) {
 	// Ensure parsing doesn't stop if the help flag is set
 	// (help seems to be special cased from ParseErrorsWhitelist.UnknownFlags)
 	GlobalFlags.BoolP("help", "h", false, "")
+	// Mirror Cobra's auto-registered version flag here so we can detect it
+	// during the eager parse below, before the command tree is loaded. This
+	// handles every bool form (`--version`, `--version=true`, `--version=false`).
+	GlobalFlags.Bool("version", false, "")
 
 	AddGlobalFlag("rsh-verbose", "v", "Enable verbose log output", false, false)
 	AddGlobalFlag("rsh-output-format", "o", "Output format [auto, json, table, ...]", "auto", false)
@@ -358,6 +367,13 @@ func Run() (returnErr error) {
 		enableVerbose = true
 	}
 
+	// `--version` is a reporting command used for support/debugging, so it
+	// must work even when the API is unreachable. Report the cached spec state
+	// from disk rather than triggering a network load (which would also prompt
+	// for auth). Cobra prints the version for `--version`/`--version=true`; the
+	// `-v` shorthand is taken by `rsh-verbose`.
+	wantVersion, _ := GlobalFlags.GetBool("version")
+
 	// Load all configured API operations directly onto the root command.
 	for name, cfg := range configs {
 		currentConfig = cfg
@@ -368,6 +384,10 @@ func Run() (returnErr error) {
 		}
 		if currentBase == "" {
 			continue
+		}
+		if wantVersion {
+			// Skip the network load; versionExtraInfo reads the on-disk cache.
+			break
 		}
 		api, err := Load(currentBase, Root)
 		if err != nil {
