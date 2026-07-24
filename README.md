@@ -18,7 +18,7 @@ The binaries for the APImetrics CLI can be downloaded from the [releases page](h
 You can install the APImetrics CLI using Homebrew:
 
 ```bash
-brew install apicontext/tap/apimetrics-cli
+brew install apimetrics/tap/apimetrics
 ```
 
 ## Windows
