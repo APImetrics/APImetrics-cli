@@ -21,14 +21,12 @@ You can install the APImetrics CLI using Homebrew:
 brew install apicontext/tap/apimetrics-cli
 ```
 
-## Windows - Coming soon!
-
-> Note: Coming soon, not available yet
+## Windows
 
 You can install the APImetrics CLI using the Windows Package Manager (winget):
 
 ```powershell
-winget install APImetrics.APImetricsCLI
+winget install APIContext.APImetricsCLI
 ```
 
 ## Linux
