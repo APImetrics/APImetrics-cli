@@ -1,7 +1,7 @@
 version: 2
-project_name: apimetrics-qc
+project_name: apimetrics-beta
 builds:
-  - id: apimetrics-qc-darwin-amd64
+  - id: apimetrics-beta-darwin-amd64
     goos:
       - darwin
     goarch:
@@ -10,17 +10,19 @@ builds:
       - darwin_amd64_v1
     dir: .
     main: .
-    binary: apimetrics-qc
+    binary: apimetrics-beta
     builder: go
     tool: go
     command: build
+    flags:
+      - -tags=beta
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
     env:
       - CGO_ENABLED=1
       - CC=o64-clang
       - CXX=o64-clang++
-  - id: apimetrics-qc-darwin-arm64
+  - id: apimetrics-beta-darwin-arm64
     goos:
       - darwin
     goarch:
@@ -29,17 +31,19 @@ builds:
       - darwin_arm64_v8.0
     dir: .
     main: .
-    binary: apimetrics-qc
+    binary: apimetrics-beta
     builder: go
     tool: go
     command: build
+    flags:
+      - -tags=beta
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
     env:
       - CGO_ENABLED=1
       - CC=oa64-clang
       - CXX=oa64-clang++
-  - id: apimetrics-qc-linux-amd64
+  - id: apimetrics-beta-linux-amd64
     goos:
       - linux
     goarch:
@@ -48,17 +52,19 @@ builds:
       - linux_amd64_v1
     dir: .
     main: .
-    binary: apimetrics-qc
+    binary: apimetrics-beta
     builder: go
     tool: go
     command: build
+    flags:
+      - -tags=beta
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
     env:
       - CGO_ENABLED=1
       - CC=x86_64-linux-gnu-gcc
       - CXX=x86_64-linux-gnu-g++
-  - id: apimetrics-qc-linux-arm64
+  - id: apimetrics-beta-linux-arm64
     goos:
       - linux
     goarch:
@@ -67,17 +73,19 @@ builds:
       - linux_arm64_v8.0
     dir: .
     main: .
-    binary: apimetrics-qc
+    binary: apimetrics-beta
     builder: go
     tool: go
     command: build
+    flags:
+      - -tags=beta
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
     env:
       - CGO_ENABLED=1
       - CC=aarch64-linux-gnu-gcc
       - CXX=aarch64-linux-gnu-g++
-  - id: apimetrics-qc-windows-amd64
+  - id: apimetrics-beta-windows-amd64
     goos:
       - windows
     goarch:
@@ -86,10 +94,12 @@ builds:
       - windows_amd64_v1
     dir: .
     main: .
-    binary: apimetrics-qc
+    binary: apimetrics-beta
     builder: go
     tool: go
     command: build
+    flags:
+      - -tags=beta
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
     env:

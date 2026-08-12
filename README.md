@@ -213,6 +213,43 @@ export APIMETRICS_CONFIG_DIR=/path/to/config
 export APIMETRICS_CACHE_DIR=/path/to/cache
 ```
 
+### Non-production builds
+
+Builds for the non-production APImetrics environments install alongside the
+production CLI: each has its own command name and its own config and cache
+directories, so they can be logged in to different environments at the same
+time.
+
+| Environment | Command | API host | Config / cache directory |
+|---|---|---|---|
+| production | `apimetrics` | `client.apimetrics.io` | `apimetrics` |
+| beta | `apimetrics-beta` | `beta-client.apimetrics.io` | `apimetrics-beta` |
+| qc | `apimetrics-qc` | `qc-client.apimetrics.io` | `apimetrics-qc` |
+| qc-stable | `apimetrics-qc-stable` | `qc-stable.apimetrics.io` | `apimetrics-qc-stable` |
+| dev | `apimetrics-dev` | `localhost:8080` | `apimetrics-dev` |
+
+The directory-override environment variables follow the command name, with
+hyphens replaced by underscores — e.g. `APIMETRICS_QC_STABLE_CONFIG_DIR`.
+
+Tagged environment builds are published on the
+[releases page](https://github.com/APImetrics/APImetrics-cli/releases) as
+prereleases, and are signed and notarized just like the production build, so
+they run on macOS without a Gatekeeper warning. Homebrew and WinGet always
+install the production CLI.
+
+`--version` reports which environment a binary was built against:
+
+```console
+$ apimetrics-qc-stable --version
+apimetrics-qc-stable version 0.1.0
+Environment:      qc-stable (https://qc-stable.apimetrics.io)
+Config directory: /Users/you/Library/Application Support/apimetrics-qc-stable
+...
+```
+
+Note that the beta build authenticates against **production** Auth0, so logging
+in to it uses your real production credentials.
+
 ## Logout
 
 ```bash

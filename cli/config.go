@@ -92,7 +92,7 @@ func projectShowCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			state := loadState()
 			if state.ProjectID == "" {
-				fmt.Fprintln(Stdout, "No active project set. Run `apimetrics project select` to choose one.")
+				fmt.Fprintf(Stdout, "No active project set. Run `%s project select` to choose one.\n", Root.Name())
 				return nil
 			}
 			if showID {

@@ -116,7 +116,8 @@ func cacheAPI(name string, api *API) {
 	}
 }
 
-// versionExtraInfo returns the extra lines shown by `--version`: the cached
+// versionExtraInfo returns the extra lines shown by `--version`: the
+// environment this binary was built against, plus the cached
 // OpenAPI document version and the date/time the spec was last refreshed
 // (fetched from the server or loaded from configured spec_files). It reads the
 // on-disk cache directly (rather than requiring a successful load) so it still
@@ -142,7 +143,13 @@ func versionExtraInfo() string {
 		}
 	}
 
-	return fmt.Sprintf("API spec version: %s\nSpec last updated:  %s", specVer, checked)
+	env := buildCfg.Environment
+	if env == "" {
+		env = "unknown"
+	}
+
+	return fmt.Sprintf("Environment:      %s (%s)\nConfig directory: %s\nAPI spec version: %s\nSpec last updated:  %s",
+		env, buildCfg.BaseURL, viper.GetString("config-directory"), specVer, checked)
 }
 
 // Load will hydrate the command tree for an API, possibly refreshing the

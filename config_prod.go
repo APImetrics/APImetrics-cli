@@ -2,6 +2,8 @@
 
 package main
 
+var envName = "production"
+var appName = "apimetrics"
 var baseURL = "https://client.apimetrics.io"
 var authURL = "https://auth.apimetrics.io/authorize"
 var tokenURL = "https://auth.apimetrics.io/oauth/token"
