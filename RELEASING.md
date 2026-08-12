@@ -13,6 +13,86 @@ All binaries are distributed as **GitHub release assets** — Homebrew and WinGe
 
 Snapshot builds (no publish) can be triggered via `workflow_dispatch` with `snapshot: true`.
 
+## Build environments
+
+Which APImetrics environment a binary talks to is fixed at build time by a Go
+build tag, with one `.goreleaser` config per environment. Each environment also
+gets its own binary name and its own config/cache directory, so the builds can
+be installed side by side and hold independent logins (see the *Configuration*
+section of `README.md`).
+
+| Environment | Build tag | GoReleaser config | Binary |
+|---|---|---|---|
+| production | `prod` | `.goreleaser/config.yaml` | `apimetrics` |
+| beta | `beta` | `.goreleaser/config-beta.yaml` | `apimetrics-beta` |
+| qc | *(none — default)* | `.goreleaser/config-qc.yaml` | `apimetrics-qc` |
+| qc-stable | `qcstable` | `.goreleaser/config-qc-stable.yaml` | `apimetrics-qc-stable` |
+| dev | `dev` | *(local builds only)* | `apimetrics-dev` |
+
+To add another environment: add a `config_<env>.go` guarded by a new build tag
+(and exclude that tag from `config_qc.go`, which is the default), copy a
+`.goreleaser` config, then register the environment in both workflows — the
+choice list in `develop.yml`, and the `case` statements in the *Resolve target
+environment* step of `release.yml`.
+
+### Which workflow builds what
+
+| | Trigger | Signed | Notarized | Published |
+|---|---|---|---|---|
+| **Develop Build** | push to `develop`, or manual dispatch with an environment | macOS only | no | Actions artifacts |
+| **Release** | a `v0.*` tag, or manual dispatch | macOS only | **yes** | GitHub release assets |
+
+Day-to-day merges to `develop` produce quick unsigned/unnotarized artifacts for
+internal use. When you want a build that testers can download and run without
+fighting Gatekeeper, **tag it** — every tagged build goes through the full
+sign + notarize pipeline, whatever environment it targets.
+
+### Tagging an environment release
+
+The environment is selected by the semver prerelease suffix on the tag, so
+GoReleaser still sees an ordinary semver tag:
+
+| Tag | Environment | GitHub release |
+|---|---|---|
+| `v0.1.0` | production | normal release, Homebrew + WinGet updated |
+| `v0.1.0-beta` / `v0.1.0-beta-2` | beta | prerelease |
+| `v0.1.0-qc` / `v0.1.0-qc-3` | qc | prerelease |
+| `v0.1.0-qc-stable` / `v0.1.0-qc-stable-2` | qc-stable | prerelease |
+| `v0.1.0-rc-1` | production | normal release (unrecognized suffixes fall back to production) |
+
+Add a numeric counter when you need to re-cut a build for the same base
+version. Both the `-2` style used by this repo's existing tags and a `.2`
+semver-dotted counter are recognized.
+
+```bash
+git tag v0.3.0-qc-stable-1
+git push origin v0.3.0-qc-stable-1
+```
+
+> **Note:** `-beta-N` now selects the **beta environment**. The historical
+> `v0.0.1-beta-1..3` tags predate this and were production builds; if you want a
+> pre-1.0 production milestone rather than a beta-environment build, use a
+> suffix that isn't an environment name (e.g. `-rc-1`).
+
+Differences for non-production tags:
+
+- The **main branch check is skipped** — environment builds are expected to be
+  cut from `develop` or a feature branch.
+- The GitHub release is marked as a **prerelease** and titled
+  `<tag> (<environment>)`, so it never appears as "Latest release" to someone
+  installing the production CLI.
+- **Homebrew and WinGet are not updated.** Those always point at production;
+  environment builds are downloaded from the release assets directly.
+- Archive filenames drop the prerelease suffix, since the environment is
+  already in the project name — `v0.3.0-qc-stable-1` produces
+  `apimetrics-qc-stable-0.3.0-darwin-arm64.tar.gz`. The full tag is still baked
+  into the binary, so `apimetrics-qc-stable --version` reports
+  `0.3.0-qc-stable-1`. Snapshot builds keep their short-commit filenames.
+
+Everything else is identical to a production release: the same Developer ID
+certificate, hardened runtime, notarization via `notarytool`, and the draft
+release is only published once signing succeeds.
+
 ---
 
 ## One-time infrastructure setup

@@ -12,8 +12,18 @@ import (
 
 var version string = "dev"
 
-// baseURL, authURL, tokenURL, authAudience, clientID are defined in
-// config_qc.go (default) or config_prod.go (build tag: prod).
+// envName, appName, baseURL, authURL, tokenURL, authAudience and clientID are
+// defined in exactly one config_*.go, selected by build tag:
+//
+//	(none)     config_qc.go        qc          apimetrics-qc
+//	prod       config_prod.go      production  apimetrics
+//	beta       config_beta.go      beta        apimetrics-beta
+//	qcstable   config_qc_stable.go qc-stable   apimetrics-qc-stable
+//	dev        config_dev.go       dev         apimetrics-dev
+//
+// appName is both the installed command name and the name of the config and
+// cache directories, so builds for different environments can be installed
+// side by side and hold independent logins.
 
 func main() {
 	if version == "dev" {
@@ -25,7 +35,8 @@ func main() {
 	}
 
 	cli.SetBuildConfig(baseURL, authURL, tokenURL, authAudience, clientID)
-	cli.Init("apimetrics", version)
+	cli.SetEnvironment(envName)
+	cli.Init(appName, version)
 
 	// Register default encodings, content type handlers, and link parsers.
 	cli.Defaults()

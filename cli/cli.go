@@ -183,8 +183,15 @@ func userHomeDir() string {
 	return home
 }
 
+// envVarName turns an app name into an environment variable prefix, e.g.
+// "apimetrics-qc" -> "APIMETRICS_QC". Hyphens can't appear in a portable shell
+// variable name, so they become underscores.
+func envVarName(appName, suffix string) string {
+	return strings.ToUpper(strings.ReplaceAll(appName, "-", "_")) + suffix
+}
+
 func getConfigDir(appName string) string {
-	configDirEnv := strings.ToUpper(appName) + "_CONFIG_DIR"
+	configDirEnv := envVarName(appName, "_CONFIG_DIR")
 	configDir := os.Getenv(configDirEnv)
 
 	if configDir == "" {
@@ -226,7 +233,7 @@ func getConfigDir(appName string) string {
 
 func getCacheDir() string {
 	appName := viper.GetString("app-name")
-	cacheDirEnv := strings.ToUpper(appName) + "_CACHE_DIR"
+	cacheDirEnv := envVarName(appName, "_CACHE_DIR")
 
 	cacheDir := os.Getenv(cacheDirEnv)
 

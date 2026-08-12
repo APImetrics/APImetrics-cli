@@ -13,6 +13,7 @@ import (
 
 // buildCfg holds the API endpoint and auth parameters baked in at build time.
 var buildCfg struct {
+	Environment  string
 	BaseURL      string
 	AuthURL      string
 	TokenURL     string
@@ -28,6 +29,13 @@ func SetBuildConfig(baseURL, authURL, tokenURL, authAudience, clientID string) {
 	buildCfg.TokenURL = tokenURL
 	buildCfg.AuthAudience = authAudience
 	buildCfg.ClientID = clientID
+}
+
+// SetEnvironment records which APImetrics environment this binary was built
+// against (e.g. "production", "qc"). Shown by `--version` so parallel installs
+// can be told apart. Must be called before cli.Init.
+func SetEnvironment(env string) {
+	buildCfg.Environment = env
 }
 
 // APIAuth describes the auth type and parameters for an API.

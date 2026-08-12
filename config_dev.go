@@ -2,6 +2,8 @@
 
 package main
 
+var envName = "dev"
+var appName = "apimetrics-dev"
 var baseURL = "http://localhost:8080"
 var authURL = "https://local-apimetrics.auth0.com/authorize"
 var tokenURL = "https://local-apimetrics.auth0.com/oauth/token"

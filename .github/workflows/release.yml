@@ -5,9 +5,26 @@ on:
     tags:
       # v0.* is intentional: prevents accidental production releases during
       # initial development. Update to v* when ready to ship v1.0.
+      #
+      # A semver prerelease suffix selects the environment to build:
+      #   v0.1.0             -> production   (apimetrics)
+      #   v0.1.0-beta[.N]    -> beta         (apimetrics-beta)
+      #   v0.1.0-qc[.N]      -> qc           (apimetrics-qc)
+      #   v0.1.0-qc-stable[.N] -> qc-stable  (apimetrics-qc-stable)
+      # Any other suffix (e.g. v0.1.0-rc.1) is treated as production.
       - v0.*
   workflow_dispatch:
     inputs:
+      environment:
+        description: 'Environment to build (ignored when running from a tag)'
+        required: false
+        type: choice
+        default: qc
+        options:
+          - qc
+          - qc-stable
+          - beta
+          - production
       snapshot:
         description: 'Run goreleaser in --snapshot mode (developer build, no publish)'
         required: false
@@ -24,11 +41,77 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      binary: ${{ steps.env.outputs.binary }}
+      is-production: ${{ steps.env.outputs.is-production }}
+      prerelease-flag: ${{ steps.env.outputs.prerelease-flag }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      # Which APImetrics environment this release targets. On a tag it comes
+      # from the semver prerelease suffix, so goreleaser still sees a plain
+      # semver tag and needs no special handling; on a manual dispatch it comes
+      # from the `environment` input.
+      - name: Resolve target environment
+        id: env
+        env:
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -e
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="${GITHUB_REF_NAME#v}"
+            suffix="${tag#*-}"
+            [ "$suffix" = "$tag" ] && suffix=""
+            # Drop a trailing iteration counter so both -beta-3 (the convention
+            # used by this repo's existing tags) and -beta.3 resolve to "beta".
+            base="$(printf '%s' "$suffix" | sed -E 's/[-.][0-9]+$//')"
+            case "$base" in
+              beta|qc|qc-stable) environment="$base" ;;
+              *)                 environment="production" ;;
+            esac
+          else
+            environment="${INPUT_ENVIRONMENT:-qc}"
+          fi
+
+          case "$environment" in
+            production) config=".goreleaser/config.yaml";                binary="apimetrics" ;;
+            beta)       config=".goreleaser/config-beta.yaml";           binary="apimetrics-beta" ;;
+            qc)         config=".goreleaser/config-qc.yaml";             binary="apimetrics-qc" ;;
+            qc-stable)  config=".goreleaser/config-qc-stable.yaml";      binary="apimetrics-qc-stable" ;;
+            *)
+              echo "::error::Unknown environment '$environment'"
+              exit 1
+              ;;
+          esac
+
+          if [ ! -f "$config" ]; then
+            echo "::error::Missing goreleaser config $config for environment $environment"
+            exit 1
+          fi
+
+          # Non-production releases are marked as GitHub prereleases so they
+          # never show up as "Latest release" for people installing the CLI.
+          if [ "$environment" = "production" ]; then
+            is_production=true
+            prerelease_flag=""
+          else
+            is_production=false
+            prerelease_flag="--prerelease"
+          fi
+
+          echo "Building the $environment environment ($binary) from $config"
+          {
+            echo "environment=$environment"
+            echo "config=$config"
+            echo "binary=$binary"
+            echo "is-production=$is_production"
+            echo "prerelease-flag=$prerelease_flag"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -37,8 +120,17 @@ jobs:
           cache: true
 
       - name: Verify release branch
+        env:
+          IS_PRODUCTION: ${{ steps.env.outputs.is-production }}
+          SNAPSHOT: ${{ inputs.snapshot }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # Only production releases are pinned to main. Environment builds
+            # are cut from develop (or a feature branch) by design.
+            if [ "$IS_PRODUCTION" != "true" ]; then
+              echo "Non-production tag $GITHUB_REF_NAME — skipping the main branch check."
+              exit 0
+            fi
             # Tag pushes don't populate origin/* remote-tracking refs, so fetch
             # the main branches explicitly before checking containment.
             git fetch --quiet origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/main-*:refs/remotes/origin/main-*' || true
@@ -47,7 +139,7 @@ jobs:
               echo "::error::Tag $GITHUB_REF_NAME must be on the main branch (or a main- branch)."
               exit 1
             fi
-          elif [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF" != refs/heads/main-* && "${{ inputs.snapshot }}" != "true" ]]; then
+          elif [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF" != refs/heads/main-* && "$SNAPSHOT" != "true" ]]; then
             echo "::error::Release workflow must be dispatched from the main branch (or a main- branch, or use snapshot=true for ad-hoc builds)."
             exit 1
           fi
@@ -88,15 +180,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SNAPSHOT: ${{ inputs.snapshot }}
+          CONFIG: ${{ steps.env.outputs.config }}
+          ENVIRONMENT: ${{ steps.env.outputs.environment }}
         run: |
           set -e
           EXTRA=""
-          CONFIG=".goreleaser/config.yaml"
           if [ "$SNAPSHOT" = "true" ]; then
-            # Snapshot builds are QC builds: QC endpoints, apimetrics-qc binary.
             EXTRA="--snapshot --skip homebrew"
-            CONFIG=".goreleaser/config-qc.yaml"
-            echo "Running goreleaser in snapshot mode (QC build, no publish)"
+            echo "Running goreleaser in snapshot mode ($ENVIRONMENT build, no publish)"
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             EXTRA="--skip publish,homebrew"
             echo "Building artifacts without publishing; GitHub release and GCS upload deferred to finalization"
@@ -113,8 +204,19 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENVIRONMENT: ${{ steps.env.outputs.environment }}
+          IS_PRODUCTION: ${{ steps.env.outputs.is-production }}
+          PRERELEASE: ${{ steps.env.outputs.prerelease-flag }}
         run: |
           set -e
+          # Production keeps the bare tag as its title; environment builds are
+          # labelled so they can't be mistaken for the production CLI.
+          TITLE="$GITHUB_REF_NAME"
+          if [ "$IS_PRODUCTION" != "true" ]; then
+            TITLE="$GITHUB_REF_NAME ($ENVIRONMENT)"
+          fi
+
+          # $PRERELEASE is either empty or "--prerelease"; unquoted on purpose.
           if gh release view "$GITHUB_REF_NAME" &>/dev/null; then
             echo "Draft release $GITHUB_REF_NAME already exists (rerun); re-uploading artifacts."
             gh release upload "$GITHUB_REF_NAME" \
@@ -123,12 +225,14 @@ jobs:
           elif [ -f dist/CHANGELOG.md ]; then
             gh release create "$GITHUB_REF_NAME" \
               dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt \
-              --draft \
+              --draft $PRERELEASE \
+              --title "$TITLE" \
               --notes-file dist/CHANGELOG.md
           else
             gh release create "$GITHUB_REF_NAME" \
               dist/*-linux-*.tar.gz dist/*-windows-*.zip dist/checksums.txt \
-              --draft \
+              --draft $PRERELEASE \
+              --title "$TITLE" \
               --generate-notes
           fi
 
@@ -145,49 +249,49 @@ jobs:
             dist/artifacts.json
             dist/metadata.json
 
-      # Snapshot (QC) builds: upload each asset as its own artifact so the
+      # Snapshot builds: upload each asset as its own artifact so the
       # Actions run lists them individually rather than as one combined zip.
-      - name: Upload QC snapshot — macOS (Intel)
+      - name: Upload snapshot — macOS (Intel)
         if: ${{ inputs.snapshot == true }}
         uses: actions/upload-artifact@v4
         with:
-          name: apimetrics-qc-darwin-amd64
+          name: ${{ steps.env.outputs.binary }}-darwin-amd64
           if-no-files-found: error
           path: dist/*-darwin-amd64.tar.gz
 
-      - name: Upload QC snapshot — macOS (Apple Silicon)
+      - name: Upload snapshot — macOS (Apple Silicon)
         if: ${{ inputs.snapshot == true }}
         uses: actions/upload-artifact@v4
         with:
-          name: apimetrics-qc-darwin-arm64
+          name: ${{ steps.env.outputs.binary }}-darwin-arm64
           if-no-files-found: error
           path: dist/*-darwin-arm64.tar.gz
 
-      - name: Upload QC snapshot — Linux (amd64)
+      - name: Upload snapshot — Linux (amd64)
         if: ${{ inputs.snapshot == true }}
         uses: actions/upload-artifact@v4
         with:
-          name: apimetrics-qc-linux-amd64
+          name: ${{ steps.env.outputs.binary }}-linux-amd64
           if-no-files-found: error
           path: dist/*-linux-amd64.tar.gz
 
-      - name: Upload QC snapshot — Linux (arm64)
+      - name: Upload snapshot — Linux (arm64)
         if: ${{ inputs.snapshot == true }}
         uses: actions/upload-artifact@v4
         with:
-          name: apimetrics-qc-linux-arm64
+          name: ${{ steps.env.outputs.binary }}-linux-arm64
           if-no-files-found: error
           path: dist/*-linux-arm64.tar.gz
 
-      - name: Upload QC snapshot — Windows (amd64)
+      - name: Upload snapshot — Windows (amd64)
         if: ${{ inputs.snapshot == true }}
         uses: actions/upload-artifact@v4
         with:
-          name: apimetrics-qc-windows-amd64
+          name: ${{ steps.env.outputs.binary }}-windows-amd64
           if-no-files-found: error
           path: dist/*-windows-amd64.zip
 
-      - name: Upload QC snapshot — checksums
+      - name: Upload snapshot — checksums
         if: ${{ inputs.snapshot == true }}
         uses: actions/upload-artifact@v4
         with:
@@ -251,7 +355,7 @@ jobs:
 
       # Snapshot builds upload each asset as its own artifact; pull them all
       # back (flattened) so the signing step finds the darwin archives.
-      - name: Download QC snapshot artifacts
+      - name: Download snapshot artifacts
         if: ${{ inputs.snapshot == true }}
         uses: actions/download-artifact@v4
         with:
@@ -344,25 +448,25 @@ jobs:
 
       # Snapshot builds: replace the unsigned darwin placeholders uploaded by
       # the build job with the signed archives, listed as individual assets.
-      - name: Upload signed QC snapshot — macOS (Intel)
+      - name: Upload signed snapshot — macOS (Intel)
         if: ${{ inputs.snapshot == true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: apimetrics-qc-darwin-amd64
+          name: ${{ needs.release.outputs.binary }}-darwin-amd64
           overwrite: true
           if-no-files-found: error
           path: dist/*-darwin-amd64.tar.gz
 
-      - name: Upload signed QC snapshot — macOS (Apple Silicon)
+      - name: Upload signed snapshot — macOS (Apple Silicon)
         if: ${{ inputs.snapshot == true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: apimetrics-qc-darwin-arm64
+          name: ${{ needs.release.outputs.binary }}-darwin-arm64
           overwrite: true
           if-no-files-found: error
           path: dist/*-darwin-arm64.tar.gz
 
-      - name: Upload signed QC snapshot — checksums
+      - name: Upload signed snapshot — checksums
         if: ${{ inputs.snapshot == true && steps.secrets_check.outputs.has_signing_cert == 'true' }}
         uses: actions/upload-artifact@v4
         with:
@@ -393,7 +497,7 @@ jobs:
 
       - name: Generate Homebrew tap token
         id: tap-token
-        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' && needs.release.outputs.is-production == 'true' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.GH_APP_ID }}
@@ -401,7 +505,7 @@ jobs:
           repositories: homebrew-tap
 
       - name: Publish Homebrew formula
-        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.secrets_check.outputs.has_signing_cert == 'true' && needs.release.outputs.is-production == 'true' }}
         env:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}
         run: |
@@ -472,8 +576,8 @@ jobs:
   release-winget:
     name: Submit WinGet package update
     runs-on: windows-latest
-    needs: release-macos
-    if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true }}
+    needs: [release, release-macos]
+    if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.snapshot != true && needs.release.outputs.is-production == 'true' }}
     timeout-minutes: 15
 
     steps:
