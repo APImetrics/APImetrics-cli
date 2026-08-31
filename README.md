@@ -79,6 +79,66 @@ To see all supported commands, run
 apimetrics --help
 ```
 
+## Service Accounts
+
+A **service account** authenticates without a browser, which is what makes the
+CLI usable from CI, cron jobs, and other headless environments. Create one in
+the APImetrics web app and download the JSON file it gives you:
+
+```json
+{
+  "name": "ci-runner",
+  "client_id": "...",
+  "client_secret": "...",
+  "audience": "https://client.apimetrics.io"
+}
+```
+
+Point the CLI at that file with `--service-account`, and it authenticates every
+request with those credentials instead of the cached browser login:
+
+```bash
+apimetrics list-calls --service-account ./ci-runner.apimetrics.json
+```
+
+The file holds a live secret — keep it out of version control, and prefer the
+environment variable when you can:
+
+```bash
+export APIMETRICS_SERVICE_ACCOUNT=/secrets/ci-runner.apimetrics.json
+apimetrics list-calls
+```
+
+### Choosing a project
+
+Service accounts are granted access to specific projects, and headless runs
+can't answer an interactive project prompt. Name the project for the run with
+`--project-id`, or its environment variable:
+
+```bash
+apimetrics list-calls \
+  --service-account /secrets/ci-runner.apimetrics.json \
+  --project-id ag9zfmFwaW1ldHJpY3MtcWNy...
+
+export APIMETRICS_PROJECT_ID=ag9zfmFwaW1ldHJpY3MtcWNy...
+```
+
+`--project-id` applies to that run only and never overwrites the project saved
+by `project select`. To see which projects a service account can reach, run
+`apimetrics project select --service-account ...` from a terminal.
+
+### Notes
+
+- Access tokens last an hour and are cached, keyed by the credentials
+  themselves — a service account never picks up your interactive login's token,
+  or another service account's. Rotating the secret invalidates the cache.
+- The client credentials grant issues no refresh token (RFC 6749 §4.4.3): when
+  the access token expires the CLI simply requests a new one.
+- `apimetrics login --service-account ...` fetches a token without making an
+  API call, which is a quick way to check that credentials work.
+- `apimetrics logout --service-account ...` drops that account's cached token
+  and leaves your browser login and selected project alone.
+
 ## Passing Input
 
 All create and update commands read a JSON body from **stdin** using a heredoc. There is no `--body`, `--data`, or `-d` flag.
@@ -154,6 +214,8 @@ These flags work with every command:
 | `--rsh-retry` | | Retry count (default 2) |
 | `--rsh-timeout` | `-t` | HTTP request timeout |
 | `--rsh-insecure` | | Disable TLS verification |
+| `--service-account` | | Authenticate with a service account file instead of a browser login |
+| `--project-id` | | Use this project for the run, overriding the selected project |
 
 ## Shell Completion
 
@@ -213,6 +275,14 @@ export APIMETRICS_CONFIG_DIR=/path/to/config
 export APIMETRICS_CACHE_DIR=/path/to/cache
 ```
 
+`--service-account` and `--project-id` have environment variables too, so a CI
+job can be configured once rather than repeating flags on every call:
+
+```bash
+export APIMETRICS_SERVICE_ACCOUNT=/secrets/ci-runner.apimetrics.json
+export APIMETRICS_PROJECT_ID=ag9zfmFwaW1ldHJpY3MtcWNy...
+```
+
 ### Non-production builds
 
 Builds for the non-production APImetrics environments install alongside the
@@ -228,8 +298,10 @@ time.
 | qc-stable | `apimetrics-qc-stable` | `qc-stable.apimetrics.io` | `apimetrics-qc-stable` |
 | dev | `apimetrics-dev` | `localhost:8080` | `apimetrics-dev` |
 
-The directory-override environment variables follow the command name, with
-hyphens replaced by underscores — e.g. `APIMETRICS_QC_STABLE_CONFIG_DIR`.
+These environment variables all follow the command name, with hyphens replaced
+by underscores — e.g. `APIMETRICS_QC_STABLE_CONFIG_DIR` and
+`APIMETRICS_QC_SERVICE_ACCOUNT`. A service account is issued by one APImetrics
+environment, so use it with the matching build.
 
 Tagged environment builds are published on the
 [releases page](https://github.com/APImetrics/APImetrics-cli/releases) as
@@ -257,6 +329,7 @@ apimetrics logout
 ```
 
 This removes cached tokens. Run `apimetrics login` again to re-authenticate.
+Add `--service-account <file>` to remove just that service account's token.
 
 # Issues and Contributing
 
