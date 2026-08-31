@@ -403,12 +403,15 @@ func logoutCmd() *cobra.Command {
 		Long:  "Remove the cached login credentials and active project, forcing re-authentication on the next request.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// A service account only ever caches an access token, so drop that
-			// and leave the browser login and the selected project — which it
-			// shares with the interactive user — alone.
+			// Clear everything under the service account's key and leave the
+			// browser login and the selected project — which it shares with
+			// the interactive user — alone. The client credentials grant
+			// issues no refresh token, but clear that too so a stale entry
+			// can't outlive a logout if one ever appears.
 			if sa := activeServiceAccount; sa != nil {
 				key := sa.cacheKey()
 				Cache.Set(key+".token", "")
+				Cache.Set(key+".refresh", "")
 				Cache.Set(key+".type", "")
 				Cache.Set(key+".expires", "")
 

@@ -67,10 +67,14 @@ func loadServiceAccount(path string) (*ServiceAccount, error) {
 // cacheKey returns the cache key for this service account's access token.
 // Tokens are keyed by credential rather than by profile so that switching
 // between service accounts — or between a service account and an interactive
-// login — never reuses another identity's token. The secret is part of the key
-// so that rotating it doesn't leave the old token being served from cache.
+// login — never reuses another identity's token.
+//
+// Every field the token is minted from takes part: the secret, so that
+// rotating it doesn't leave the old token being served from cache, and the
+// audience, so that two files sharing a client but naming different audiences
+// don't hand each other a token minted for the wrong one.
 func (sa *ServiceAccount) cacheKey() string {
-	sum := sha256.Sum256([]byte(sa.ClientID + "|" + sa.ClientSecret + "|" + sa.TokenURL))
+	sum := sha256.Sum256([]byte(sa.ClientID + "|" + sa.ClientSecret + "|" + sa.Audience + "|" + sa.TokenURL))
 	return "service-account:" + hex.EncodeToString(sum[:8])
 }
 

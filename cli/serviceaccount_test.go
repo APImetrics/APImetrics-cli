@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -82,26 +85,32 @@ func TestLoadServiceAccountErrors(t *testing.T) {
 }
 
 func TestServiceAccountCacheKey(t *testing.T) {
-	sa := &ServiceAccount{ClientID: "abc123", ClientSecret: "s3cret", TokenURL: "https://auth.example.com/oauth/token"}
+	sa := &ServiceAccount{
+		ClientID:     "abc123",
+		ClientSecret: "s3cret",
+		Audience:     "https://api.example.com",
+		TokenURL:     "https://auth.example.com/oauth/token",
+	}
 
 	// Stable across calls, and namespaced away from the interactive login's
 	// "apimetrics:<profile>" key.
 	assert.Equal(t, sa.cacheKey(), sa.cacheKey())
 	assert.Regexp(t, `^service-account:[0-9a-f]{16}$`, sa.cacheKey())
 
-	// Every credential field takes part, so no two accounts — and no rotated
-	// secret — can be served another's cached token.
-	other := *sa
-	other.ClientID = "different"
-	assert.NotEqual(t, sa.cacheKey(), other.cacheKey())
-
-	rotated := *sa
-	rotated.ClientSecret = "rotated"
-	assert.NotEqual(t, sa.cacheKey(), rotated.cacheKey())
-
-	otherEnv := *sa
-	otherEnv.TokenURL = "https://qc-auth.example.com/oauth/token"
-	assert.NotEqual(t, sa.cacheKey(), otherEnv.cacheKey())
+	// Every field the token is minted from takes part, so no two accounts — and
+	// no rotated secret or differing audience — can be served another's token.
+	for name, mutate := range map[string]func(*ServiceAccount){
+		"client id": func(s *ServiceAccount) { s.ClientID = "different" },
+		"secret":    func(s *ServiceAccount) { s.ClientSecret = "rotated" },
+		"audience":  func(s *ServiceAccount) { s.Audience = "https://other.example.com" },
+		"token url": func(s *ServiceAccount) { s.TokenURL = "https://qc-auth.example.com/oauth/token" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			other := *sa
+			mutate(&other)
+			assert.NotEqual(t, sa.cacheKey(), other.cacheKey())
+		})
+	}
 }
 
 func TestApplyCredentialOverrides(t *testing.T) {
@@ -132,4 +141,40 @@ func TestApplyCredentialOverrides(t *testing.T) {
 	assert.Equal(t, "https://api.example.com", profile.Auth.Params["audience"])
 	assert.Equal(t, activeServiceAccount.cacheKey(), profile.Auth.Params["cache_key"])
 	assert.Equal(t, "project-42", profile.Headers["Apimetrics-Project-Id"])
+}
+
+func TestLogoutClearsOnlyServiceAccountToken(t *testing.T) {
+	t.Setenv("APIMETRICS_SA_TEST_CONFIG_DIR", t.TempDir())
+	t.Setenv("APIMETRICS_SA_TEST_CACHE_DIR", t.TempDir())
+	Init("apimetrics-sa-test", "1.0.0")
+
+	out := &strings.Builder{}
+	defer func(stdout io.Writer, sa *ServiceAccount) {
+		Stdout, activeServiceAccount = stdout, sa
+	}(Stdout, activeServiceAccount)
+	Stdout = out
+
+	activeServiceAccount = &ServiceAccount{
+		ClientID:     "abc123",
+		ClientSecret: "s3cret",
+		Audience:     "https://api.example.com",
+		TokenURL:     "https://auth.example.com/oauth/token",
+	}
+
+	key := activeServiceAccount.cacheKey()
+	Cache.Set(key+".token", "an-access-token")
+	Cache.Set(key+".type", "Bearer")
+	Cache.Set(key+".expires", time.Now().Add(time.Hour))
+	// The grant issues none, but a stale entry must not outlive a logout.
+	Cache.Set(key+".refresh", "a-refresh-token")
+	// The interactive login's token has to survive untouched.
+	Cache.Set("apimetrics:default.token", "browser-token")
+	require.NoError(t, Cache.WriteConfig())
+
+	require.NoError(t, logoutCmd().RunE(nil, nil))
+
+	for _, suffix := range []string{".token", ".refresh", ".type", ".expires"} {
+		assert.Empty(t, Cache.GetString(key+suffix), "%s should be cleared", suffix)
+	}
+	assert.Equal(t, "browser-token", Cache.GetString("apimetrics:default.token"))
 }
