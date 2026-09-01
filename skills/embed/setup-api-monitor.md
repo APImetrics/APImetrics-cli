@@ -8,7 +8,8 @@ description: >
 
 ## Input format
 
-All `apimetrics` create commands read JSON from stdin. Use heredoc syntax:
+`apimetrics` create commands take their body from stdin or from CLI Shorthand
+arguments. Prefer stdin with heredoc syntax — it keeps nested JSON unambiguous:
 
 ```bash
 apimetrics create-call <<'EOF'
@@ -89,7 +90,7 @@ EOF
 
 `frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
 
-**Validation gate:** Confirm the schedule lists the monitor ID in its targets before proceeding.
+**Validation gate:** Confirm the schedule lists the call ID in its targets before proceeding.
 
 ### 3. Run the monitor on-demand
 
