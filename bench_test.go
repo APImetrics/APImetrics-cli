@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/amzn/ion-go/ion"
-	"github.com/fxamacker/cbor/v2"
 	"apicontext.com/apimetrics/cli"
 	"apicontext.com/apimetrics/openapi"
+	"github.com/amzn/ion-go/ion"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/shamaton/msgpack/v2"
 	"github.com/spf13/cobra"
 )

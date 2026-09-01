@@ -1,0 +1,206 @@
+name: Develop Build
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to build against'
+        required: true
+        type: choice
+        default: qc
+        options:
+          - qc
+          - qc-stable
+          - beta
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build non-production artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    outputs:
+      artifact-name: ${{ steps.env.outputs.artifact-name }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Each environment has its own goreleaser config, which bakes in the
+      # matching build tag and binary name (see main.go). Pushes to develop
+      # always build QC; other environments are dispatched manually.
+      - name: Resolve build environment
+        id: env
+        env:
+          ENVIRONMENT: ${{ inputs.environment || 'qc' }}
+        run: |
+          set -e
+          config=".goreleaser/config-${ENVIRONMENT}.yaml"
+          if [ ! -f "$config" ]; then
+            echo "::error::No goreleaser config for environment '$ENVIRONMENT' ($config)"
+            exit 1
+          fi
+          echo "Building the $ENVIRONMENT environment from $config"
+          echo "config=$config" >> "$GITHUB_OUTPUT"
+          echo "artifact-name=${ENVIRONMENT}-artifacts-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run GoReleaser (all platforms, unsigned)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFIG: ${{ steps.env.outputs.config }}
+        run: |
+          docker run --rm \
+            -v "${PWD}:/workspace" \
+            -w /workspace \
+            -e GITHUB_TOKEN \
+            ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
+            release --snapshot --config "$CONFIG" --clean --parallelism 2
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.env.outputs.artifact-name }}
+          if-no-files-found: error
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+            dist/artifacts.json
+            dist/metadata.json
+
+  sign-macos:
+    name: Sign macOS artifacts
+    runs-on: macos-latest
+    needs: build
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Check for Apple signing secrets
+        id: secrets_check
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+        run: |
+          if [ -n "$APPLE_CERT_P12" ]; then
+            echo "has_signing_cert=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signing_cert=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::APPLE_CERT_P12 not configured — skipping Apple code signing."
+          fi
+
+      - name: Import Apple certificate
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -e
+          for var_name in APPLE_CERT_PASSWORD KEYCHAIN_PASSWORD; do
+            if [ -z "${!var_name}" ]; then
+              echo "::error::$var_name is required when APPLE_CERT_P12 is configured."
+              exit 1
+            fi
+          done
+
+          printf '%s' "$APPLE_CERT_P12" | base64 -D > cert.p12
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security import cert.p12 -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"' | xargs)
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: dist
+
+      - name: Sign macOS artifacts
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PATH: ${{ runner.temp }}/build.keychain-db
+        run: |
+          set -e
+          if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::error::APPLE_SIGNING_IDENTITY is required for signing."
+            exit 1
+          fi
+          if [ ! -f dist/checksums.txt ]; then
+            echo "::error::dist/checksums.txt not found."
+            exit 1
+          fi
+
+          for archive in dist/*-darwin-*.tar.gz; do
+            [ -f "$archive" ] || continue
+            tmpdir="$(mktemp -d)"
+            orig_members=$(tar -tzf "$archive")
+            tar -xzf "$archive" -C "$tmpdir"
+
+            while IFS= read -r -d '' bin; do
+              codesign --force --options runtime --timestamp \
+                --keychain "$KEYCHAIN_PATH" \
+                --sign "$APPLE_SIGNING_IDENTITY" "$bin"
+              codesign --verify --deep --strict "$bin"
+            done < <(find "$tmpdir" -type f -perm -111 -print0)
+
+            # shellcheck disable=SC2086
+            tar -czf "${archive}.signed" -C "$tmpdir" $orig_members
+            mv "${archive}.signed" "$archive"
+            rm -rf "$tmpdir"
+
+            filename="$(basename "$archive")"
+            sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+            grep -v "  $filename\$" dist/checksums.txt > dist/checksums.new || true
+            printf "%s  %s\n" "$sha" "$filename" >> dist/checksums.new
+            mv dist/checksums.new dist/checksums.txt
+
+            PATCH_NAME="$filename" PATCH_SHA="$sha" python3 << 'PYEOF'
+          import json, os
+          data = json.load(open('dist/artifacts.json'))
+          name = os.environ['PATCH_NAME']
+          checksum = os.environ['PATCH_SHA']
+          for a in data:
+              if a.get('name') == name:
+                  a.setdefault('extra', {})['Checksum'] = 'sha256:' + checksum
+          with open('dist/artifacts.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          PYEOF
+          done
+
+      - name: Upload signed macOS artifacts
+        if: ${{ steps.secrets_check.outputs.has_signing_cert == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}-macos-signed
+          if-no-files-found: error
+          path: |
+            dist/*-darwin-amd64.tar.gz
+            dist/*-darwin-arm64.tar.gz
+            dist/checksums.txt
+
+      - name: Clean up keychain and cert
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f cert.p12

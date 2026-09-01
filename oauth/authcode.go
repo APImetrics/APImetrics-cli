@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,111 +17,157 @@ import (
 
 	"context"
 
-	"github.com/mattn/go-isatty"
 	"apicontext.com/apimetrics/cli"
+	"github.com/mattn/go-isatty"
 	"golang.org/x/oauth2"
 )
 
 var htmlSuccess = `
-<html>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login Successful — APImetrics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700" rel="stylesheet">
+  </head>
   <style>
-    @keyframes bg {
-      from {background: white;}
-      to {background: #5fafd7;}
+    :root {
+      --brand-navy: #27283c;
+      --brand-blue: #00b1ff;
+      --brand-green: #2ecc71;
     }
-    @keyframes x {
-      from {transform: rotate(0deg) skew(30deg, 20deg);}
-      to {transform: rotate(-45deg);}
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--brand-navy);
+      background: #f9f9f9;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    @keyframes fade {
-      from {opacity: 0;}
-      to {opacity: 1;}
+    .card {
+      background: #fff;
+      width: 90%;
+      max-width: 420px;
+      padding: 48px 40px;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 12px 40px -12px rgba(39, 40, 60, 0.25);
+      animation: fade 0.6s ease-out both;
     }
-    body { font-family: sans-serif; margin-top: 8%; animation: bg 1.5s ease-out; animation-fill-mode: forwards; }
-    p { width: 80%; }
-    .check {
-      margin: auto;
-      width: 18%;
-      height: 15%;
-      border-left: 16px solid white;
-      border-bottom: 16px solid white;
-      animation: x 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-      animation-fill-mode: forwards;
+    .logo { width: 64px; height: 64px; margin-bottom: 24px; }
+    .icon {
+      margin: 0 auto 24px;
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: var(--brand-green);
+      position: relative;
+      animation: pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
     }
-    .msg {
-      margin: auto;
-      margin-top: 180px;
-      width: 40%;
-      background: white;
-      padding: 20px 32px;
-      border-radius: 10px;
-      animation: fade 2s;
-      animation-fill-mode: forwards;
-      box-shadow: 0px 15px 15px -15px rgba(0, 0, 0, 0.5);
+    .icon .check {
+      position: absolute;
+      top: 19px;
+      left: 25px;
+      width: 18px;
+      height: 30px;
+      border-right: 5px solid #fff;
+      border-bottom: 5px solid #fff;
+      transform: rotate(45deg);
+      transform-origin: center;
+      animation: draw 0.4s 0.3s ease-out both;
     }
+    h1 { font-size: 22px; font-weight: 700; margin: 0 0 12px; }
+    p { font-size: 15px; line-height: 1.5; color: #5a5b6a; margin: 0; }
+    @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
+    @keyframes draw { from { opacity: 0; } to { opacity: 1; } }
   </style>
   <body>
-    <div class="check"></div>
-    <div class="msg">
-        <h1>Login Successful!</h1>
-        Please return to the terminal. You may now close this window.
-      </p>
+    <div class="card">
+      <img class="logo" src="https://client.apimetrics.io/android-chrome-192x192.png" alt="APImetrics" onerror="this.style.display='none'">
+      <div class="icon"><div class="check"></div></div>
+      <h1>Login Successful!</h1>
+      <p>Please return to the terminal. You may now close this window.</p>
     </div>
   </body>
 </html>
 `
 
 var htmlError = `
-<html>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login Failed — APImetrics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700" rel="stylesheet">
+  </head>
   <style>
-    @keyframes bg {
-      from {background: white;}
-      to {background: #E94F37;}
+    :root {
+      --brand-navy: #27283c;
+      --brand-red: #e94f37;
     }
-    @keyframes x {
-      from {transform: scaleY(0);}
-      to {transform: scaleY(1) rotate(-90deg);}
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--brand-navy);
+      background: #f9f9f9;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    @keyframes fade {
-      from {opacity: 0;}
-      to {opacity: 1;}
+    .card {
+      background: #fff;
+      width: 90%;
+      max-width: 420px;
+      padding: 48px 40px;
+      border-radius: 12px;
+      text-align: center;
+      box-shadow: 0 12px 40px -12px rgba(39, 40, 60, 0.25);
+      animation: fade 0.6s ease-out both;
     }
-    body { font-family: sans-serif; margin-top: 15%; animation: bg 1.5s ease-out; animation-fill-mode: forwards; }
-    p { width: 80%; }
-    .x, .x:after {
-      margin: auto;
-      background: white;
-      width: 20%;
-      height: 16px;
+    .logo { width: 64px; height: 64px; margin-bottom: 24px; }
+    .icon {
+      margin: 0 auto 24px;
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: var(--brand-red);
+      position: relative;
+      animation: pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+    }
+    .icon .x, .icon .x:after {
+      position: absolute;
+      top: 33px;
+      left: 22px;
+      width: 28px;
+      height: 5px;
       border-radius: 3px;
-      transform: rotate(-45deg);
-      animation: x 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-      animation-fill-mode: forwards;
+      background: #fff;
+      transform: rotate(45deg);
     }
-    .x:after {
-      content: "";
-      display: block;
-      width: 100%;
-      transform: rotate(90deg);
-    }
-    .msg {
-      margin: auto;
-      margin-top: 200px;
-      width: 40%;
-      background: white;
-      padding: 20px 32px;
-      border-radius: 10px;
-      animation: fade 2s;
-      animation-fill-mode: forwards;
-      box-shadow: 0px 15px 15px -15px rgba(0, 0, 0, 0.5);
-    }
+    .icon .x:after { content: ""; transform: rotate(90deg); top: 0; left: 0; }
+    h1 { font-size: 22px; font-weight: 700; margin: 0 0 12px; }
+    p { font-size: 15px; line-height: 1.5; color: #5a5b6a; margin: 0; word-break: break-word; }
+    @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
   </style>
   <body>
-    <div style="transform: rotate(-45deg);"><div class="x"></div></div>
-    <div class="msg">
-        <h1>Error: $ERROR</h1>
-        $DETAILS
-      </p>
+    <div class="card">
+      <img class="logo" src="https://client.apimetrics.io/android-chrome-192x192.png" alt="APImetrics" onerror="this.style.display='none'">
+      <div class="icon"><div class="x"></div></div>
+      <h1>Login Failed</h1>
+      <p><strong>$ERROR</strong><br>$DETAILS</p>
     </div>
   </body>
 </html>
@@ -187,7 +234,9 @@ func (h authHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.URL.Query().Get("error"); err != "" {
 		details := r.URL.Query().Get("error_description")
-		rendered := strings.Replace(strings.Replace(htmlError, "$ERROR", err, 1), "$DETAILS", details, 1)
+		// Escape the query params before interpolating into HTML to avoid
+		// reflected XSS via the localhost redirect URL.
+		rendered := strings.Replace(strings.Replace(htmlError, "$ERROR", html.EscapeString(err), 1), "$DETAILS", html.EscapeString(details), 1)
 		w.Write([]byte(rendered))
 		h.c <- ""
 		return
@@ -285,10 +334,33 @@ func (ac *AuthorizationCodeTokenSource) Token() (*oauth2.Token, error) {
 		}
 	}()
 
-	// Open auth URL in browser, print for manual use in case open fails.
-	fmt.Fprintln(os.Stderr, "Open your browser to log in using the URL:")
-	fmt.Fprintln(os.Stderr, authorizeURL.String())
-	open(authorizeURL.String())
+	// Print welcome banner, show login URL, and ask before opening browser.
+	fmt.Fprint(os.Stderr, `
+    _   ___ ___           _       _
+   /_\ | _ \_ _|_ __  ___| |_ _ _(_)__ ___
+  / _ \|  _/| || '  \/ -_|  _| '_| / _(_-<
+ /_/ \_\_| |___|_|_|_\___|\__|_| |_\__/__/
+`)
+	fmt.Fprintln(os.Stderr, "Welcome to APImetrics CLI!")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "To log in, open the following URL in your browser:")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "  "+authorizeURL.String())
+	fmt.Fprintln(os.Stderr, "")
+	// Only prompt interactively if stdin is a live terminal. If a file or
+	// command has been piped in it is likely the request body to use after
+	// auth, so we must not consume it here (see the manual-code path below).
+	if isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		fmt.Fprint(os.Stderr, "Open your browser now? [Y/n]: ")
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(strings.ToLower(answer))
+		if answer == "" || answer == "y" || answer == "yes" {
+			open(authorizeURL.String())
+		}
+	} else {
+		open(authorizeURL.String())
+	}
 
 	// Provide a way to manually enter the code, e.g. for remote SSH sessions.
 	// Only read from stdin if it is a live terminal, if a file or command has

@@ -13,6 +13,7 @@ import (
 
 // buildCfg holds the API endpoint and auth parameters baked in at build time.
 var buildCfg struct {
+	Environment  string
 	BaseURL      string
 	AuthURL      string
 	TokenURL     string
@@ -28,6 +29,13 @@ func SetBuildConfig(baseURL, authURL, tokenURL, authAudience, clientID string) {
 	buildCfg.TokenURL = tokenURL
 	buildCfg.AuthAudience = authAudience
 	buildCfg.ClientID = clientID
+}
+
+// SetEnvironment records which APImetrics environment this binary was built
+// against (e.g. "production", "qc"). Shown by `--version` so parallel installs
+// can be told apart. Must be called before cli.Init.
+func SetEnvironment(env string) {
+	buildCfg.Environment = env
 }
 
 // APIAuth describes the auth type and parameters for an API.
@@ -79,24 +87,22 @@ type apiConfigs map[string]*APIConfig
 var configs apiConfigs
 
 func initAPIConfig() {
-	state := loadState()
-
-	profile := &APIProfile{
-		Auth: &APIAuth{
-			Name: "oauth-authorization-code",
-			Params: map[string]string{
-				"authorize_url": buildCfg.AuthURL + "?audience=" + buildCfg.AuthAudience,
-				"token_url":     buildCfg.TokenURL,
-				"client_id":     buildCfg.ClientID,
-				"client_secret": "",
-				"redirect_url":  "",
-				"scopes":        "openid profile email",
-			},
+	auth := &APIAuth{
+		Name: "oauth-authorization-code",
+		Params: map[string]string{
+			"authorize_url": buildCfg.AuthURL + "?audience=" + buildCfg.AuthAudience,
+			"token_url":     buildCfg.TokenURL,
+			"client_id":     buildCfg.ClientID,
+			"client_secret": "",
+			"redirect_url":  "",
+			"scopes":        "openid profile email",
 		},
 	}
-	if state.ProjectID != "" {
+
+	profile := &APIProfile{Auth: auth}
+	if projectID := activeProjectID(); projectID != "" {
 		profile.Headers = map[string]string{
-			"Apimetrics-Project-Id": state.ProjectID,
+			"Apimetrics-Project-Id": projectID,
 		}
 	}
 
@@ -108,6 +114,43 @@ func initAPIConfig() {
 				"default": profile,
 			},
 		},
+	}
+}
+
+// applyCredentialOverrides re-points the default profile at a service account
+// and at any project chosen for this run. The command line is not parsed until
+// Run, so this happens there rather than in initAPIConfig, but still before
+// anything hits the wire.
+func applyCredentialOverrides() {
+	cfg := configs["apimetrics"]
+	if cfg == nil {
+		return
+	}
+
+	profile := cfg.Profiles["default"]
+	if profile == nil {
+		return
+	}
+
+	// A service account replaces the browser login entirely.
+	if sa := activeServiceAccount; sa != nil {
+		profile.Auth = &APIAuth{
+			Name: "oauth-service-account",
+			Params: map[string]string{
+				"client_id":     sa.ClientID,
+				"client_secret": sa.ClientSecret,
+				"token_url":     sa.TokenURL,
+				"audience":      sa.Audience,
+				"cache_key":     sa.cacheKey(),
+			},
+		}
+	}
+
+	if projectID := activeProjectID(); projectID != "" {
+		if profile.Headers == nil {
+			profile.Headers = map[string]string{}
+		}
+		profile.Headers["Apimetrics-Project-Id"] = projectID
 	}
 }
 
@@ -129,11 +172,11 @@ func findAPI(uri string) (string, *APIConfig) {
 				if strings.HasPrefix(uri, config.Profiles[profile].Base) {
 					return name, config
 				}
-			} else if strings.HasPrefix(uri, config.Base) {
+			} else if config.Base != "" && strings.HasPrefix(uri, config.Base) {
 				return name, config
 			}
 		} else {
-			if strings.HasPrefix(uri, config.Base) {
+			if config.Base != "" && strings.HasPrefix(uri, config.Base) {
 				// TODO: find the longest matching base?
 				return name, config
 			}
