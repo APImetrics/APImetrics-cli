@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -16,11 +17,20 @@ import (
 //go:embed embed/*.md
 var skillFiles embed.FS
 
+// claudeSkillFiles holds the current-format Claude Code skills, one directory
+// per skill containing a SKILL.md. These are installed by `--claude-skills`
+// into .claude/skills/<name>/SKILL.md; the legacy flat setup skills in
+// skillFiles are left untouched.
+//
+//go:embed claude-skills
+var claudeSkillFiles embed.FS
+
 type agent int
 
 const (
 	agentCustom agent = iota
 	agentClaudeCode
+	agentClaudeSkills
 	agentCodex
 )
 
@@ -34,15 +44,17 @@ func Init(cmd *cobra.Command) {
 	install := cobra.Command{
 		Use:   "install",
 		Short: "Install APImetrics skills into an agent skills directory",
-		Example: "  " + os.Args[0] + " skills install --claude-code\n" +
+		Example: "  " + os.Args[0] + " skills install --claude-skills\n" +
+			"  " + os.Args[0] + " skills install --claude-code\n" +
 			"  " + os.Args[0] + " skills install --codex\n" +
 			"  " + os.Args[0] + " skills install --dir ./custom",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			claudeCode, _ := cmd.Flags().GetBool("claude-code")
+			claudeSkills, _ := cmd.Flags().GetBool("claude-skills")
 			codex, _ := cmd.Flags().GetBool("codex")
 			dir, _ := cmd.Flags().GetString("dir")
 
-			target, kind, err := resolveTarget(claudeCode, codex, dir)
+			target, kind, err := resolveTarget(claudeCode, claudeSkills, codex, dir)
 			if err != nil {
 				return err
 			}
@@ -51,6 +63,7 @@ func Init(cmd *cobra.Command) {
 		},
 	}
 
+	install.Flags().Bool("claude-skills", false, "Install into .claude/skills/<name>/SKILL.md (current Claude Code Skills format)")
 	install.Flags().Bool("claude-code", false, "Install into .claude/commands/ as slash commands and write .claude/agents.md")
 	install.Flags().Bool("codex", false, "Install into .codex/skills/")
 	install.Flags().StringP("dir", "d", "", "Install into a custom directory path")
@@ -71,9 +84,12 @@ func Init(cmd *cobra.Command) {
 	cmd.AddCommand(&onboard)
 }
 
-func resolveTarget(claudeCode, codex bool, dir string) (string, agent, error) {
+func resolveTarget(claudeCode, claudeSkills, codex bool, dir string) (string, agent, error) {
 	count := 0
 	if claudeCode {
+		count++
+	}
+	if claudeSkills {
 		count++
 	}
 	if codex {
@@ -84,13 +100,15 @@ func resolveTarget(claudeCode, codex bool, dir string) (string, agent, error) {
 	}
 
 	if count == 0 {
-		return "", agentCustom, fmt.Errorf("specify a target: --claude-code, --codex, or --dir <path>")
+		return "", agentCustom, fmt.Errorf("specify a target: --claude-skills, --claude-code, --codex, or --dir <path>")
 	}
 	if count > 1 {
-		return "", agentCustom, fmt.Errorf("specify only one of --claude-code, --codex, or --dir")
+		return "", agentCustom, fmt.Errorf("specify only one of --claude-skills, --claude-code, --codex, or --dir")
 	}
 
 	switch {
+	case claudeSkills:
+		return ".claude/skills", agentClaudeSkills, nil
 	case claudeCode:
 		return ".claude/commands", agentClaudeCode, nil
 	case codex:
@@ -100,7 +118,60 @@ func resolveTarget(claudeCode, codex bool, dir string) (string, agent, error) {
 	}
 }
 
+// installClaudeSkills writes the current-format Claude Code skills as
+// <target>/<name>/SKILL.md, one directory per skill.
+func installClaudeSkills(target string) error {
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return fmt.Errorf("creating directory %s: %w", target, err)
+	}
+
+	var names []string
+	err := fs.WalkDir(claudeSkillFiles, "claude-skills", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || path.Base(p) != "SKILL.md" {
+			return nil
+		}
+
+		data, err := claudeSkillFiles.ReadFile(p)
+		if err != nil {
+			return fmt.Errorf("reading skill %s: %w", p, err)
+		}
+
+		slug := path.Base(path.Dir(p))
+		dir := filepath.Join(target, slug)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating directory %s: %w", dir, err)
+		}
+
+		dest := filepath.Join(dir, "SKILL.md")
+		if err := os.WriteFile(dest, data, 0644); err != nil {
+			return fmt.Errorf("writing skill %s: %w", dest, err)
+		}
+
+		fmt.Fprintf(cli.Stdout, "Installed %s\n", dest)
+		names = append(names, slug)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("reading embedded skills: %w", err)
+	}
+
+	fmt.Fprintf(cli.Stdout, "\n%d skills installed to %s\n", len(names), target)
+	fmt.Fprintf(cli.Stdout, "\nClaude Code loads these automatically by description, or you can invoke one by name:\n")
+	for _, name := range names {
+		fmt.Fprintf(cli.Stdout, "  /%s\n", name)
+	}
+	fmt.Fprintf(cli.Stdout, "\nTo onboard any agent directly, run: %s onboard\n", os.Args[0])
+	return nil
+}
+
 func installSkills(target string, kind agent) error {
+	if kind == agentClaudeSkills {
+		return installClaudeSkills(target)
+	}
+
 	if err := os.MkdirAll(target, 0755); err != nil {
 		return fmt.Errorf("creating directory %s: %w", target, err)
 	}
