@@ -3,9 +3,11 @@ package cli
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -90,6 +92,13 @@ func projectShowCmd() *cobra.Command {
 		Short: "Show the active project",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// An override applies to this run only, so report it as-is rather
+			// than the saved project it is standing in for.
+			if projectIDOverride != "" {
+				fmt.Fprintln(Stdout, projectIDOverride)
+				return nil
+			}
+
 			state := loadState()
 			if state.ProjectID == "" {
 				fmt.Fprintf(Stdout, "No active project set. Run `%s project select` to choose one.\n", Root.Name())
@@ -280,9 +289,16 @@ func parseProjectsResponse(body map[string]any) ([]projectEntry, map[string]stri
 }
 
 func selectProjectIfUnset() error {
-	state := loadState()
-	if state.ProjectID != "" {
+	if activeProjectID() != "" {
 		return nil
+	}
+
+	// Picking a project needs a terminal to prompt on. Service accounts are
+	// mostly used headlessly, so say what to do instead of hanging on a prompt
+	// that nobody can answer.
+	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		return fmt.Errorf("no active project set: pass --project-id, set %s, or run `%s project select` from a terminal",
+			envVarName(viper.GetString("app-name"), "_PROJECT_ID"), Root.Name())
 	}
 
 	fmt.Fprintln(Stdout, "No active project set. Please select a project to continue.")
@@ -338,8 +354,11 @@ func loginCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
 		Short: "Log in to APImetrics",
-		Long:  "Log in to APImetrics. Commands will automatically trigger login if needed, so this is rarely required.",
-		Args:  cobra.NoArgs,
+		Long: `Log in to APImetrics. Commands will automatically trigger login if needed, so this is rarely required.
+
+With --service-account, this fetches and caches an access token for the service
+account, which is a convenient way to check that its credentials work.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := configs["apimetrics"]
 			if cfg == nil {
@@ -362,7 +381,16 @@ func loginCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintln(Stdout, "Logged in successfully.")
+			if sa := activeServiceAccount; sa != nil {
+				name := sa.Name
+				if name == "" {
+					name = sa.ClientID
+				}
+				fmt.Fprintf(Stdout, "Authenticated as service account %s.\n", name)
+			} else {
+				fmt.Fprintln(Stdout, "Logged in successfully.")
+			}
+
 			return selectProjectIfUnset()
 		},
 	}
@@ -375,6 +403,26 @@ func logoutCmd() *cobra.Command {
 		Long:  "Remove the cached login credentials and active project, forcing re-authentication on the next request.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Clear everything under the service account's key and leave the
+			// browser login and the selected project — which it shares with
+			// the interactive user — alone. The client credentials grant
+			// issues no refresh token, but clear that too so a stale entry
+			// can't outlive a logout if one ever appears.
+			if sa := activeServiceAccount; sa != nil {
+				key := sa.cacheKey()
+				Cache.Set(key+".token", "")
+				Cache.Set(key+".refresh", "")
+				Cache.Set(key+".type", "")
+				Cache.Set(key+".expires", "")
+
+				if err := Cache.WriteConfig(); err != nil {
+					return fmt.Errorf("could not write cache: %w", err)
+				}
+
+				fmt.Fprintln(Stdout, "Removed the cached service account token.")
+				return nil
+			}
+
 			key := "apimetrics:default"
 			Cache.Set(key+".token", "")
 			Cache.Set(key+".refresh", "")

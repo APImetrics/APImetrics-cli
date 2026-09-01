@@ -156,6 +156,8 @@ func Init(name string, version string) {
 	AddGlobalFlag("rsh-ignore-status-code", "", "Do not set exit code from HTTP status code", false, false)
 	AddGlobalFlag("rsh-retry", "", "Number of times to retry on certain failures", 2, false)
 	AddGlobalFlag("rsh-timeout", "t", "Timeout for HTTP requests", time.Duration(0), false)
+	AddGlobalFlag("service-account", "", "Path to a service account file to authenticate with instead of a browser login", "", false)
+	AddGlobalFlag("project-id", "", "Project to use for this run, overriding the selected project", "", false)
 
 	Root.RegisterFlagCompletionFunc("rsh-output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"auto", "json", "yaml"}, cobra.ShellCompDirectiveNoFileComp
@@ -330,7 +332,9 @@ func Run() (returnErr error) {
 
 	// Because we may be doing HTTP calls before cobra has parsed the flags
 	// we parse the GlobalFlags here and already set some config values
-	// to ensure they are available
+	// to ensure they are available. This must happen exactly once: parsing
+	// again would append to the repeatable flags, doubling every `-H` and
+	// `-q` value.
 	if err := GlobalFlags.Parse(os.Args[1:]); err != nil {
 		if err != pflag.ErrHelp {
 			panic(err)
@@ -373,6 +377,14 @@ func Run() (returnErr error) {
 	if viper.GetBool("rsh-verbose") {
 		enableVerbose = true
 	}
+
+	// Auth and the project header can be redirected from the command line, so
+	// they are settled here rather than in Init, but still before the API load
+	// below makes the first request.
+	appName := viper.GetString("app-name")
+	initServiceAccount(appName)
+	initProjectID(appName)
+	applyCredentialOverrides()
 
 	// `--version` is a reporting command used for support/debugging, so it
 	// must work even when the API is unreachable. Report the cached spec state

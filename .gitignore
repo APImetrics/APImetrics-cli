@@ -1,6 +1,7 @@
 dist
 TODO*
 launch.json
-apimetrics
+/apimetrics
+/apimetrics-*
 gcp-secret.json
 .DS_Store

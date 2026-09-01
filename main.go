@@ -50,6 +50,7 @@ func main() {
 	// Register auth schemes
 	cli.AddAuth("oauth-client-credentials", &oauth.ClientCredentialsHandler{})
 	cli.AddAuth("oauth-authorization-code", &oauth.AuthorizationCodeHandler{})
+	cli.AddAuth("oauth-service-account", &oauth.ServiceAccountHandler{})
 
 	// Run the CLI, parsing arguments, making requests, and printing responses.
 	if err := cli.Run(); err != nil {
