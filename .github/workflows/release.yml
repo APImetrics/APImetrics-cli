@@ -193,10 +193,23 @@ jobs:
             echo "Building artifacts without publishing; GitHub release and GCS upload deferred to finalization"
           fi
 
+          # All four .goreleaser configs sort tags with `-version:refname`, so
+          # when several environment tags point at the same commit (e.g.
+          # qc/beta/qc-stable cut from the same develop HEAD), GoReleaser's own
+          # git-based tag detection can pick a sibling tag instead of the one
+          # that triggered this run — silently mislabeling main.version.
+          # GORELEASER_CURRENT_TAG pins it to the actual triggering tag.
+          DOCKER_ENV_ARGS=(-e GITHUB_TOKEN)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            export GORELEASER_CURRENT_TAG="$GITHUB_REF_NAME"
+            DOCKER_ENV_ARGS+=(-e GORELEASER_CURRENT_TAG)
+            echo "Pinning goreleaser to the triggering tag: $GORELEASER_CURRENT_TAG"
+          fi
+
           docker run --rm \
             -v "${PWD}:/workspace" \
             -w /workspace \
-            -e GITHUB_TOKEN \
+            "${DOCKER_ENV_ARGS[@]}" \
             ghcr.io/goreleaser/goreleaser-cross:v1.25-v2.12.7 \
             release $EXTRA --config "$CONFIG" --clean --parallelism 2
 
