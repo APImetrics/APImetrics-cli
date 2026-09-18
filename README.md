@@ -253,10 +253,33 @@ apimetrics skills install --claude-code
 apimetrics onboard
 ```
 
-Available skills:
+Available setup skills:
 - `setup-api-monitor` — Create an API (HTTP) monitor, attach a schedule, and verify it
 - `setup-browser-monitor` — Create a browser monitor, attach a schedule, and verify it
 - `setup-mcp-monitor` — Create an MCP protocol monitor with session steps
+
+### Claude Code Skills (operational workflows)
+
+In addition to the setup commands above, the CLI ships eight richer, current-format **Claude Code Skills** covering the operational lifecycle. Install them into `.claude/skills/<name>/SKILL.md`:
+
+```bash
+apimetrics skills install --claude-skills
+```
+
+- `apimetrics-project-bootstrap` — select a project and stand up verified scheduled monitoring
+- `apimetrics-weekly-health-review` — analyze the previous seven complete days
+- `apimetrics-failure-investigation` — root-cause one result or a failure series
+- `apimetrics-incident-triage` — blast radius and common cause across monitors
+- `apimetrics-monitoring-estate-audit` — coverage, hygiene, stale/duplicate monitors
+- `apimetrics-slo-review` — SLO design, attainment, and error-budget risk
+- `apimetrics-config-as-code` — safe bulk checkout/diff/push workflow
+- `apimetrics-performance-analytics` — latency percentiles, component timing, and DNS analytics
+
+Read-only skills load automatically when a request matches; the two mutation skills require explicit invocation and gate every change behind approval.
+
+### Other agents (OpenAI Codex, Cursor, Gemini CLI, …)
+
+The repo root ships an [`AGENTS.md`](AGENTS.md) — the cross-agent standard read by OpenAI Codex, Cursor, Gemini CLI, and others — that carries the same core CLI facts and workflow index. Any agent can also pull the full workflows on demand with `apimetrics onboard`.
 
 ## Configuration
 
