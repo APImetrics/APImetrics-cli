@@ -8,48 +8,61 @@ import (
 
 func TestResolveTarget(t *testing.T) {
 	cases := []struct {
-		name       string
-		claudeCode bool
-		codex      bool
-		dir        string
-		wantTarget string
-		wantAgent  agent
-		wantErr    string
+		name         string
+		claudeCode   bool
+		claudeSkills bool
+		codex        bool
+		dir          string
+		wantTarget   string
+		wantAgent    agent
+		wantErr      string
 	}{
 		{
 			name:    "no target selected",
-			wantErr: "specify a target: --claude-code, --codex, or --dir <path>",
+			wantErr: "specify a target: --claude-skills, --claude-code, --codex, or --dir <path>",
 		},
 		{
 			name:       "claude-code and codex together",
 			claudeCode: true,
 			codex:      true,
-			wantErr:    "specify only one of --claude-code, --codex, or --dir",
+			wantErr:    "specify only one of --claude-skills, --claude-code, --codex, or --dir",
 		},
 		{
 			name:       "claude-code and dir together",
 			claudeCode: true,
 			dir:        "some/dir",
-			wantErr:    "specify only one of --claude-code, --codex, or --dir",
+			wantErr:    "specify only one of --claude-skills, --claude-code, --codex, or --dir",
 		},
 		{
 			name:    "codex and dir together",
 			codex:   true,
 			dir:     "some/dir",
-			wantErr: "specify only one of --claude-code, --codex, or --dir",
+			wantErr: "specify only one of --claude-skills, --claude-code, --codex, or --dir",
 		},
 		{
 			name:       "all three together",
 			claudeCode: true,
 			codex:      true,
 			dir:        "some/dir",
-			wantErr:    "specify only one of --claude-code, --codex, or --dir",
+			wantErr:    "specify only one of --claude-skills, --claude-code, --codex, or --dir",
+		},
+		{
+			name:         "claude-skills and claude-code together",
+			claudeSkills: true,
+			claudeCode:   true,
+			wantErr:      "specify only one of --claude-skills, --claude-code, --codex, or --dir",
 		},
 		{
 			name:       "claude-code only",
 			claudeCode: true,
 			wantTarget: ".claude/commands",
 			wantAgent:  agentClaudeCode,
+		},
+		{
+			name:         "claude-skills only",
+			claudeSkills: true,
+			wantTarget:   ".claude/skills",
+			wantAgent:    agentClaudeSkills,
 		},
 		{
 			name:       "codex only",
@@ -67,7 +80,7 @@ func TestResolveTarget(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			target, kind, err := resolveTarget(c.claudeCode, c.codex, c.dir)
+			target, kind, err := resolveTarget(c.claudeCode, c.claudeSkills, c.codex, c.dir)
 
 			if c.wantErr != "" {
 				assert.EqualError(t, err, c.wantErr)
