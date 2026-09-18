@@ -1,0 +1,245 @@
+# Release Process
+
+This document covers the one-time infrastructure setup required to run the release workflow, and how to cut a release once everything is configured.
+
+## How releases work
+
+Pushing a `v0.x.y` tag triggers the release workflow (`.github/workflows/release.yml`), which:
+
+1. **Linux job** — cross-compiles all platform binaries inside `goreleaser-cross` (Docker), builds archives, and creates a GitHub draft release with the Linux and Windows assets.
+2. **macOS job** — signs and notarizes the Darwin binaries using an Apple Developer certificate, re-archives them, replaces the macOS assets on the draft release, publishes the release, then updates the Homebrew tap formula.
+
+All binaries are distributed as **GitHub release assets** — Homebrew and WinGet download directly from `https://github.com/APImetrics/APImetrics-cli/releases/download/<tag>/`.
+
+Snapshot builds (no publish) can be triggered via `workflow_dispatch` with `snapshot: true`.
+
+## Build environments
+
+Which APImetrics environment a binary talks to is fixed at build time by a Go
+build tag, with one `.goreleaser` config per environment. Each environment also
+gets its own binary name and its own config/cache directory, so the builds can
+be installed side by side and hold independent logins (see the *Configuration*
+section of `README.md`).
+
+| Environment | Build tag | GoReleaser config | Binary |
+|---|---|---|---|
+| production | `prod` | `.goreleaser/config.yaml` | `apimetrics` |
+| beta | `beta` | `.goreleaser/config-beta.yaml` | `apimetrics-beta` |
+| qc | *(none — default)* | `.goreleaser/config-qc.yaml` | `apimetrics-qc` |
+| qc-stable | `qcstable` | `.goreleaser/config-qc-stable.yaml` | `apimetrics-qc-stable` |
+| dev | `dev` | *(local builds only)* | `apimetrics-dev` |
+
+To add another environment: add a `config_<env>.go` guarded by a new build tag
+(and exclude that tag from `config_qc.go`, which is the default), copy a
+`.goreleaser` config, then register the environment in both workflows — the
+choice list in `develop.yml`, and the `case` statements in the *Resolve target
+environment* step of `release.yml`.
+
+### Which workflow builds what
+
+| | Trigger | Signed | Notarized | Published |
+|---|---|---|---|---|
+| **Develop Build** | push to `develop`, or manual dispatch with an environment | macOS only | no | Actions artifacts |
+| **Release** | a `v0.*` tag, or manual dispatch | macOS only | **yes** | GitHub release assets |
+
+Day-to-day merges to `develop` produce quick unsigned/unnotarized artifacts for
+internal use. When you want a build that testers can download and run without
+fighting Gatekeeper, **tag it** — every tagged build goes through the full
+sign + notarize pipeline, whatever environment it targets.
+
+### Tagging an environment release
+
+The environment is selected by the semver prerelease suffix on the tag, so
+GoReleaser still sees an ordinary semver tag:
+
+| Tag | Environment | GitHub release |
+|---|---|---|
+| `v0.1.0` | production | normal release, Homebrew + WinGet updated |
+| `v0.1.0-beta` / `v0.1.0-beta-2` | beta | prerelease |
+| `v0.1.0-qc` / `v0.1.0-qc-3` | qc | prerelease |
+| `v0.1.0-qc-stable` / `v0.1.0-qc-stable-2` | qc-stable | prerelease |
+| `v0.1.0-rc-1` | production | normal release (unrecognized suffixes fall back to production) |
+
+Add a numeric counter when you need to re-cut a build for the same base
+version. Both the `-2` style used by this repo's existing tags and a `.2`
+semver-dotted counter are recognized.
+
+```bash
+git tag v0.3.0-qc-stable-1
+git push origin v0.3.0-qc-stable-1
+```
+
+> **Note:** `-beta-N` now selects the **beta environment**. The historical
+> `v0.0.1-beta-1..3` tags predate this and were production builds; if you want a
+> pre-1.0 production milestone rather than a beta-environment build, use a
+> suffix that isn't an environment name (e.g. `-rc-1`).
+
+Differences for non-production tags:
+
+- The **main branch check is skipped** — environment builds are expected to be
+  cut from `develop` or a feature branch.
+- The GitHub release is marked as a **prerelease** and titled
+  `<tag> (<environment>)`, so it never appears as "Latest release" to someone
+  installing the production CLI.
+- **Homebrew and WinGet are not updated.** Those always point at production;
+  environment builds are downloaded from the release assets directly.
+- Archive filenames drop the prerelease suffix, since the environment is
+  already in the project name — `v0.3.0-qc-stable-1` produces
+  `apimetrics-qc-stable-0.3.0-darwin-arm64.tar.gz`. The full tag is still baked
+  into the binary, so `apimetrics-qc-stable --version` reports
+  `0.3.0-qc-stable-1`. Snapshot builds keep their short-commit filenames.
+
+Everything else is identical to a production release: the same Developer ID
+certificate, hardened runtime, notarization via `notarytool`, and the draft
+release is only published once signing succeeds.
+
+---
+
+## One-time infrastructure setup
+
+> Binaries are distributed as GitHub release assets, so **the repository must be
+> public** (or the download URLs used by Homebrew/WinGet must otherwise be
+> reachable by end users). No cloud storage or service-account setup is required.
+
+### 1. GitHub App — Homebrew tap access
+
+The workflow uses a GitHub App to push formula updates to `APImetrics/homebrew-tap`. This avoids a long-lived personal access token.
+
+1. Go to **GitHub → APImetrics org settings → Developer settings → GitHub Apps → New GitHub App**.
+2. Name it something like `apimetrics-release-bot`.
+3. Under **Permissions → Repository permissions**, set **Contents** to `Read & write`. No other permissions needed.
+4. Uncheck **Webhooks** (not needed).
+5. Set **Where can this GitHub App be installed?** to `Only on this account`.
+6. Create the app and note the **App ID**.
+7. Under **Private keys**, generate and download a private key (`.pem` file).
+8. Go to **Install App** and install it on `APImetrics/homebrew-tap` only.
+
+**Secrets to add to `APImetrics/APImetrics-cli`:**
+
+| Secret | Value |
+|--------|-------|
+| `GH_APP_ID` | Numeric App ID shown on the app settings page |
+| `GH_APP_PRIVATE_KEY` | Full contents of the downloaded `.pem` file, including the `-----BEGIN RSA PRIVATE KEY-----` and `-----END RSA PRIVATE KEY-----` header/footer lines |
+
+---
+
+### 2. Apple code signing and notarization
+
+macOS binaries must be signed and notarized with an Apple Developer ID certificate so they run without Gatekeeper warnings.
+
+**Prerequisites:**
+- An [Apple Developer Program](https://developer.apple.com/programs/) membership.
+- A **Developer ID Application** certificate. Export it as a `.p12` file from Keychain Access (include the private key, set a strong export password).
+- An [app-specific password](https://support.apple.com/en-us/102654) for the Apple ID used to notarize.
+
+**Encode the certificate:**
+
+```bash
+base64 -i certificate.p12 | pbcopy   # copies base64 to clipboard
+```
+
+**Secrets to add to `APImetrics/APImetrics-cli`:**
+
+| Secret | Value |
+|--------|-------|
+| `APPLE_CERT_P12` | Base64-encoded `.p12` certificate (see above) |
+| `APPLE_CERT_PASSWORD` | Password set when exporting the `.p12` |
+| `KEYCHAIN_PASSWORD` | Any strong random string (used for the temporary CI keychain) |
+| `APPLE_SIGNING_IDENTITY` | Certificate common name, e.g. `Developer ID Application: APImetrics Inc (XXXXXXXXXX)` |
+| `APPLE_ID` | Apple ID email used for notarization |
+| `APPLE_ID_PASSWORD` | App-specific password for that Apple ID |
+| `APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
+
+---
+
+### 3. Homebrew tap repository
+
+The Homebrew formula is pushed to `APImetrics/homebrew-tap`. Ensure:
+
+- The repository exists.
+- A `Formula/` directory exists in the repository root (create it with a `.gitkeep` if needed — the release workflow will create `Formula/apimetrics.rb` on first release).
+- The GitHub App from step 1 is installed on this repository.
+
+---
+
+### 4. WinGet package
+
+The workflow uses `wingetcreate` to submit a PR to [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs) after each release, keeping the Windows Package Manager entry up to date.
+
+#### Initial package submission (first release only)
+
+The package must exist in `microsoft/winget-pkgs` before automated updates can run. Create the initial manifest with `wingetcreate`:
+
+```powershell
+# Download wingetcreate.exe (Windows only — run this on a Windows machine)
+Invoke-WebRequest -Uri "https://github.com/microsoft/winget-create/releases/download/v1.12.8.0/wingetcreate.exe" -OutFile wingetcreate.exe
+
+$version = "0.1.0"  # set to the first published version
+$installerUrl = "https://github.com/APImetrics/APImetrics-cli/releases/download/v$version/apimetrics-$version-windows-amd64.zip"
+
+.\wingetcreate.exe new $installerUrl `
+  --id APIContext.APImetricsCLI `
+  --version $version `
+  --name "APImetrics CLI" `
+  --publisher "APIContext" `
+  --token <YOUR_GITHUB_PAT>
+```
+
+Review the generated manifest files, then submit the PR manually. Once merged, subsequent releases are automated.
+
+#### GitHub PAT for automated updates
+
+The `wingetcreate update --submit` command creates a PR on `microsoft/winget-pkgs` using a GitHub account you control.
+
+- **Classic PAT (recommended):** `public_repo` scope is sufficient.
+- **Fine-grained PAT:** grant access to your fork of `winget-pkgs` and enable **Contents: read/write** and **Pull requests: read/write**. Note that `wingetcreate` creates the fork on first run — the fork must exist before you can pre-select it when generating the token.
+
+**Secret to add to `APImetrics/APImetrics-cli`:**
+
+| Secret | Value |
+|--------|-------|
+| `WINGET_GITHUB_TOKEN` | Token used by `wingetcreate` to push to your fork and open PRs on `microsoft/winget-pkgs` |
+
+---
+
+## Complete secrets reference
+
+All secrets required on `APImetrics/APImetrics-cli`:
+
+| Secret | Purpose |
+|--------|---------|
+| `GH_APP_ID` | GitHub App ID for Homebrew tap access |
+| `GH_APP_PRIVATE_KEY` | GitHub App private key for Homebrew tap access |
+| `APPLE_CERT_P12` | Base64 Apple Developer ID certificate |
+| `APPLE_CERT_PASSWORD` | Password for the p12 certificate |
+| `KEYCHAIN_PASSWORD` | Temporary CI keychain password |
+| `APPLE_SIGNING_IDENTITY` | Apple signing identity string |
+| `APPLE_ID` | Apple ID for notarization |
+| `APPLE_ID_PASSWORD` | App-specific password for notarization |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+| `WINGET_GITHUB_TOKEN` | PAT for submitting WinGet PRs to `microsoft/winget-pkgs` |
+
+---
+
+## Cutting a release
+
+Once all secrets are configured:
+
+```bash
+git tag v0.x.y
+git push origin v0.x.y
+```
+
+Monitor progress in the [Actions tab](https://github.com/APImetrics/APImetrics-cli/actions). The full pipeline (Linux build + macOS sign/notarize) takes approximately 20–30 minutes.
+
+### Snapshot builds (no publish)
+
+To build all artifacts without publishing anywhere:
+
+1. Go to **Actions → Release → Run workflow**.
+2. Check **Run goreleaser in --snapshot mode**.
+3. Run from any branch.
+
+### Tag pattern note
+
+The workflow only triggers on `v0.*` tags. This is intentional during initial development to prevent accidental production releases. Update the tag pattern in `.github/workflows/release.yml` to `v*` when ready to ship v1.0.

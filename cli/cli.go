@@ -83,6 +83,8 @@ func Init(name string, version string) {
 
 	Formatter = NewDefaultFormatter(tty, useColor)
 
+	cobra.AddTemplateFunc("versionExtra", versionExtraInfo)
+
 	cobra.AddTemplateFunc("highlight", func(s string) string {
 		// Highlighting is expensive, so only do this when the user actually asks
 		// for help via this template func and a custom help template.
@@ -121,6 +123,9 @@ func Init(name string, version string) {
 	Root.SetHelpTemplate(`{{with (or .Long .Short)}}{{. | trimTrailingWhitespaces | highlight}}
 
 {{end}}{{if or .Runnable .HasSubCommands}}{{.UsageString}}{{end}}`)
+	Root.SetVersionTemplate(`{{with .Name}}{{printf "%s " .}}{{end}}{{printf "version %s" .Version}}
+{{versionExtra}}
+`)
 
 	GlobalFlags = pflag.NewFlagSet("eager-flags", pflag.ContinueOnError)
 	GlobalFlags.ParseErrorsWhitelist.UnknownFlags = true
@@ -129,6 +134,10 @@ func Init(name string, version string) {
 	// Ensure parsing doesn't stop if the help flag is set
 	// (help seems to be special cased from ParseErrorsWhitelist.UnknownFlags)
 	GlobalFlags.BoolP("help", "h", false, "")
+	// Mirror Cobra's auto-registered version flag here so we can detect it
+	// during the eager parse below, before the command tree is loaded. This
+	// handles every bool form (`--version`, `--version=true`, `--version=false`).
+	GlobalFlags.Bool("version", false, "")
 
 	AddGlobalFlag("rsh-verbose", "v", "Enable verbose log output", false, false)
 	AddGlobalFlag("rsh-output-format", "o", "Output format [auto, json, table, ...]", "auto", false)
@@ -147,6 +156,8 @@ func Init(name string, version string) {
 	AddGlobalFlag("rsh-ignore-status-code", "", "Do not set exit code from HTTP status code", false, false)
 	AddGlobalFlag("rsh-retry", "", "Number of times to retry on certain failures", 2, false)
 	AddGlobalFlag("rsh-timeout", "t", "Timeout for HTTP requests", time.Duration(0), false)
+	AddGlobalFlag("service-account", "", "Path to a service account file to authenticate with instead of a browser login", "", false)
+	AddGlobalFlag("project-id", "", "Project to use for this run, overriding the selected project", "", false)
 
 	Root.RegisterFlagCompletionFunc("rsh-output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"auto", "json", "yaml"}, cobra.ShellCompDirectiveNoFileComp
@@ -174,8 +185,15 @@ func userHomeDir() string {
 	return home
 }
 
+// envVarName turns an app name into an environment variable prefix, e.g.
+// "apimetrics-qc" -> "APIMETRICS_QC". Hyphens can't appear in a portable shell
+// variable name, so they become underscores.
+func envVarName(appName, suffix string) string {
+	return strings.ToUpper(strings.ReplaceAll(appName, "-", "_")) + suffix
+}
+
 func getConfigDir(appName string) string {
-	configDirEnv := strings.ToUpper(appName) + "_CONFIG_DIR"
+	configDirEnv := envVarName(appName, "_CONFIG_DIR")
 	configDir := os.Getenv(configDirEnv)
 
 	if configDir == "" {
@@ -217,7 +235,7 @@ func getConfigDir(appName string) string {
 
 func getCacheDir() string {
 	appName := viper.GetString("app-name")
-	cacheDirEnv := strings.ToUpper(appName) + "_CACHE_DIR"
+	cacheDirEnv := envVarName(appName, "_CACHE_DIR")
 
 	cacheDir := os.Getenv(cacheDirEnv)
 
@@ -314,7 +332,9 @@ func Run() (returnErr error) {
 
 	// Because we may be doing HTTP calls before cobra has parsed the flags
 	// we parse the GlobalFlags here and already set some config values
-	// to ensure they are available
+	// to ensure they are available. This must happen exactly once: parsing
+	// again would append to the repeatable flags, doubling every `-H` and
+	// `-q` value.
 	if err := GlobalFlags.Parse(os.Args[1:]); err != nil {
 		if err != pflag.ErrHelp {
 			panic(err)
@@ -358,6 +378,21 @@ func Run() (returnErr error) {
 		enableVerbose = true
 	}
 
+	// Auth and the project header can be redirected from the command line, so
+	// they are settled here rather than in Init, but still before the API load
+	// below makes the first request.
+	appName := viper.GetString("app-name")
+	initServiceAccount(appName)
+	initProjectID(appName)
+	applyCredentialOverrides()
+
+	// `--version` is a reporting command used for support/debugging, so it
+	// must work even when the API is unreachable. Report the cached spec state
+	// from disk rather than triggering a network load (which would also prompt
+	// for auth). Cobra prints the version for `--version`/`--version=true`; the
+	// `-v` shorthand is taken by `rsh-verbose`.
+	wantVersion, _ := GlobalFlags.GetBool("version")
+
 	// Load all configured API operations directly onto the root command.
 	for name, cfg := range configs {
 		currentConfig = cfg
@@ -365,6 +400,13 @@ func Run() (returnErr error) {
 		currentBase := cfg.Base
 		if p := cfg.Profiles[profile]; p != nil && p.Base != "" {
 			currentBase = p.Base
+		}
+		if currentBase == "" {
+			continue
+		}
+		if wantVersion {
+			// Skip the network load; versionExtraInfo reads the on-disk cache.
+			break
 		}
 		api, err := Load(currentBase, Root)
 		if err != nil {

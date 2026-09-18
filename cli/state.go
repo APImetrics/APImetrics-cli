@@ -35,3 +35,26 @@ func SaveState(s State) error {
 	}
 	return os.WriteFile(filename, b, 0600)
 }
+
+// projectIDOverride is the project selected for this run with the
+// `--project-id` flag or the `<APP_NAME>_PROJECT_ID` environment variable. It
+// takes precedence over the saved state and is not persisted.
+var projectIDOverride string
+
+// initProjectID resolves the project override. Called from Run once the global
+// flags are parsed, before applyCredentialOverrides sets the project header.
+func initProjectID(appName string) {
+	projectIDOverride, _ = GlobalFlags.GetString("project-id")
+	if projectIDOverride == "" {
+		projectIDOverride = os.Getenv(envVarName(appName, "_PROJECT_ID"))
+	}
+}
+
+// activeProjectID returns the project to send with requests: the override for
+// this run if there is one, otherwise the project saved by `project select`.
+func activeProjectID() string {
+	if projectIDOverride != "" {
+		return projectIDOverride
+	}
+	return loadState().ProjectID
+}
