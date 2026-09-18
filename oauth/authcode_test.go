@@ -32,7 +32,10 @@ func serveAuthCallback(t *testing.T, query string) string {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/?"+query, nil))
 
-	body, err := io.ReadAll(w.Result().Body)
+	res := w.Result()
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
 	assert.NoError(t, err)
 
 	return string(body)
@@ -67,7 +70,10 @@ func TestAuthHandlerPassesCodeThrough(t *testing.T) {
 
 	assert.Equal(t, "abc123", <-h.c)
 
-	body, err := io.ReadAll(w.Result().Body)
+	res := w.Result()
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
 	assert.NoError(t, err)
 	assert.Equal(t, htmlSuccess, string(body))
 }

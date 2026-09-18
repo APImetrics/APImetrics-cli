@@ -85,6 +85,7 @@ func TestResolveTarget(t *testing.T) {
 			if c.wantErr != "" {
 				assert.EqualError(t, err, c.wantErr)
 				assert.Empty(t, target)
+				assert.Equal(t, agentCustom, kind)
 				return
 			}
 

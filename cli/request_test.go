@@ -78,6 +78,11 @@ func TestAuthHookFailure(t *testing.T) {
 		configs = apiConfigs{}
 	}
 	viper.Set("rsh-profile", "default")
+	t.Cleanup(func() {
+		viper.Set("rsh-profile", "")
+		delete(configs, "auth-hook-fail")
+		delete(authHandlers, "hook-fail")
+	})
 
 	configs["auth-hook-fail"] = &APIConfig{
 		Base: "http://auth-hook-fail.example.com",
