@@ -31,7 +31,7 @@ Use the CLI's built-in hidden `bulk` workflow for local JSON checkout and synchr
    EOF
    ```
    Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. There is no `list-call-results` (use `list-results-by-call`) or `list-slos`/`get-slo` (SLOs are one per project — `get-project-slo` returns a bare single object). Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -79,18 +79,15 @@ Do not initialize into a directory containing unrelated JSON files.
 
 ### 2. Initialize the checkout
 
-`bulk init` takes exactly one URL argument that returns a list of resources, each with a link and a version. Use the CLI's own API-name scheme (`apimetrics:/<collection>`) rather than a raw host — the repository's own example is:
+`bulk init` takes exactly one URL argument that returns a list of resources, each with a link and a version. **The `apimetrics:/<collection>` scheme does not work** — it appears only as a cosmetic example string in the CLI's own `--help` output (`bulk/commands.go`), but nothing in the CLI actually resolves that scheme against the configured server: passing it does a literal DNS lookup on the host `apimetrics` and fails (`dial tcp: lookup apimetrics: no such host`). Use a real, resolvable URL — a full host+path against the CLI's configured API server, confirmed working live:
 
 ```bash
-apimetrics bulk init apimetrics:/monitors
+apimetrics bulk init qc-client.apimetrics.io/api/2/calls/ -f 'body.results.{id, version: meta.last_update}' --url-template='/api/2/calls/{id}'
 ```
 
-`init` auto-detects the resource URL from `url`/`uri`/`self`/`link` and the version from `version`/`etag`/`last_modified`/`lastModified`/`modified`. If the collection response doesn't expose those directly, shape it with `-f` and/or build links from IDs with `--url-template`:
+(Substitute the CLI's actual configured host — check `apimetrics --version` — and the real resource path from `apimetrics <list-command> --help`.)
 
-```bash
-apimetrics bulk init apimetrics:/monitors -f 'body.{url, version: last_update}'
-apimetrics bulk init apimetrics:/monitors -f 'body.{id, version: last_update}' --url-template='/monitors/{id}'
-```
+`init` auto-detects the resource URL from `url`/`uri`/`self`/`link` and the version from `version`/`etag`/`last_modified`/`lastModified`/`modified`. The `list-calls` response doesn't expose a direct link, so the example above shapes it with `-f` down to `id`/`version` and builds the link from the ID with `--url-template`, confirmed working live.
 
 Always confirm the exact flags first:
 
@@ -98,7 +95,7 @@ Always confirm the exact flags first:
 apimetrics bulk init --help
 ```
 
-Do not guess an undocumented host path; prefer the `apimetrics:` scheme, which resolves against the CLI's configured server. `bulk` is a hidden command group — it will not appear in the top-level `--help` list, but `apimetrics bulk --help` is authoritative.
+`bulk` is a hidden command group — it will not appear in the top-level `--help` list, but `apimetrics bulk --help` is authoritative.
 
 ### 3. Baseline
 

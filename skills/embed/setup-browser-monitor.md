@@ -97,9 +97,9 @@ Save the `result_id` from the response — used in the next step.
 apimetrics get-result <result-id>
 ```
 
-Poll until `result` is no longer `QUEUED`. Wait 10–15 seconds between checks (browser monitors typically complete within 60 seconds).
+Poll until `result_category` is no longer `QUEUED` (a separate `result` field carries a transport-completion value like `COMPLETE`, not the pass/fail outcome). Wait 10–15 seconds between checks (browser monitors typically complete within 60 seconds).
 
-**Validation gate:** `result` must be `PASS`. Values of `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem — inspect the response for details.
+**Validation gate:** `result_category` must be `PASS`. Values of `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem — inspect the response for details.
 
 To get a screenshot of the page at the time of the run:
 ```bash
@@ -118,6 +118,6 @@ apimetrics get-result-screenshot <result-id>
 ## Error recovery
 
 - **400 on create:** Confirm `name` and `url` are both provided and that the URL includes the scheme (`https://`).
-- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project show` to check the active project.
+- **401/403:** There is no `--api-key` flag — authentication is via `apimetrics login` (OAuth). Confirm login state and that a project is active with `apimetrics project show`.
 - **No result after 120s:** Browser monitors may take longer in high-load periods. Check the monitor with `apimetrics read-browser-monitor <monitor-id>` and retry.
 - **Screenshot unavailable:** Not all result types include screenshots. Fall back to `get-result-content`.
