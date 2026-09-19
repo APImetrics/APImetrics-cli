@@ -82,16 +82,12 @@ Do not initialize into a directory containing unrelated JSON files.
 `bulk init` takes exactly one URL argument that returns a list of resources, each with a link and a version. **The `apimetrics:/<collection>` scheme does not work** — it appears only as a cosmetic example string in the CLI's own `--help` output (`bulk/commands.go`), but nothing in the CLI actually resolves that scheme against the configured server: passing it does a literal DNS lookup on the host `apimetrics` and fails (`dial tcp: lookup apimetrics: no such host`). Use a real, resolvable URL — a full host+path against the CLI's configured API server, confirmed working live:
 
 ```bash
-apimetrics bulk init qc-client.apimetrics.io/api/2/calls/ -f 'body.results.{url:id, version: meta.last_update}'
+apimetrics bulk init qc-client.apimetrics.io/api/2/calls/ -f 'body.results.{id, version: meta.last_update}' --url-template='/api/2/calls/{id}'
 ```
 
 (Substitute the CLI's actual configured host — check `apimetrics --version` — and the real resource path from `apimetrics <list-command> --help`.)
 
-`init` auto-detects the resource URL from `url`/`uri`/`self`/`link` and the version from `version`/`etag`/`last_modified`/`lastModified`/`modified`. If the collection response doesn't expose those directly, shape it with `-f` and/or build links from IDs with `--url-template`, as in the example above and:
-
-```bash
-apimetrics bulk init qc-client.apimetrics.io/api/2/calls/ -f 'body.results.{id, version: meta.last_update}' --url-template='/api/2/calls/{id}'
-```
+`init` auto-detects the resource URL from `url`/`uri`/`self`/`link` and the version from `version`/`etag`/`last_modified`/`lastModified`/`modified`. The `list-calls` response doesn't expose a direct link, so the example above shapes it with `-f` down to `id`/`version` and builds the link from the ID with `--url-template`, confirmed working live.
 
 Always confirm the exact flags first:
 

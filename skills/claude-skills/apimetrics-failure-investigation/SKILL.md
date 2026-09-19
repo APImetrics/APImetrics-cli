@@ -95,7 +95,7 @@ Compare failing and passing results across the dimensions below. Each names the 
 | component timings (`dns`, `connect`, `tls`, `ttfb`, `response`) and percentiles | `query-api-monitor-performance` (per monitor) or `query-api-performance` (project), body `{from,to,metrics,measures,group_by}` |
 | DNS provider / resolved IPs / CNAME chain / NS / mean lookup time | `query-api-monitor-dns-diagnostics` / `query-api-dns-diagnostics`, body `{from,to,group_by,locations}` |
 | response body / headers / named content | `get-result-content <result-id> <path>` (the second positional arg is the path into the captured content) |
-| assertion / condition outcomes | `get-call-conditions <call-id>` plus the `result` category; `conformance-results` / `conformance-results-summary` for spec conformance |
+| assertion / condition outcomes | `get-call-conditions <call-id>` plus `result_category`; `conformance-results` / `conformance-results-summary` for spec conformance |
 | browser screenshot | `get-result-screenshot <result-id>` |
 | MCP session step / tool response | the MCP result summary and `get-result-content` |
 

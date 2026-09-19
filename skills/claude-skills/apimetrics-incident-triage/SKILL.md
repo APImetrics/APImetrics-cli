@@ -55,7 +55,7 @@ apimetrics list-results --from <ISO> --time <ISO> -o json   # {meta, results:[..
 
 (`list-results` has no `--since`/`--before` flags — the real ones are `--from` (start) and `--time` (end), plus `--result-category`/`--cursor`/`--limit`.)
 
-Each row gives `result`, `http_code`, `response_time`, `location_id`, and `test` (monitor ID) — enough to segment by monitor, status, and location. For shared-cause hypotheses, use `query-api-dns-diagnostics` (DNS provider/IP/CNAME drift by location) and `query-api-performance` (latency shift by location/interval) over the incident window. Map monitor IDs back to names/hosts/auth with `list-calls`, `list-browser-monitors`, `list-mcp-monitors`, and `list-auth-settings`. Identify:
+Each row gives `result_category`, `http_code`, `response_time`, `location_id`, and `test` (monitor ID) — enough to segment by monitor, status, and location. For shared-cause hypotheses, use `query-api-dns-diagnostics` (DNS provider/IP/CNAME drift by location) and `query-api-performance` (latency shift by location/interval) over the incident window. Map monitor IDs back to names/hosts/auth with `list-calls`, `list-browser-monitors`, `list-mcp-monitors`, and `list-auth-settings`. Identify:
 
 - affected monitors and unaffected controls
 - target hosts/services
