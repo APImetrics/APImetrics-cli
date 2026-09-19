@@ -314,7 +314,7 @@ func Init(cmd *cobra.Command) {
 		Hidden: true,
 		Use:    "bulk",
 		Short:   "Client-side bulk resource management",
-		Example: "  " + os.Args[0] + " bulk init apimetrics:/monitors\n  " + os.Args[0] + " bulk list -m 'name contains checkout'\n  " + os.Args[0] + " bulk status",
+		Example: "  " + os.Args[0] + " bulk init api.example.com/monitors\n  " + os.Args[0] + " bulk list -m 'name contains checkout'\n  " + os.Args[0] + " bulk status",
 	}
 
 	bulk.AddGroup(
