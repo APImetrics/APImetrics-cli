@@ -9,11 +9,11 @@ For more information, please visit our main documentation site, available at [ht
 
 ## Installation
 
-## Manual installation
+### Manual installation
 
 The binaries for the APImetrics CLI can be downloaded from the [releases page](https://github.com/APImetrics/APImetrics-cli/releases). Choose the appropriate version for your operating system and put the executable in your path for easy access from the command line.
 
-## MacOS
+### MacOS
 
 You can install the APImetrics CLI using Homebrew:
 
@@ -21,7 +21,7 @@ You can install the APImetrics CLI using Homebrew:
 brew install apimetrics/tap/apimetrics
 ```
 
-## Windows
+### Windows
 
 You can install the APImetrics CLI using the Windows Package Manager (winget):
 
@@ -29,7 +29,7 @@ You can install the APImetrics CLI using the Windows Package Manager (winget):
 winget install APIContext.APImetricsCLI
 ```
 
-## Linux
+### Linux
 
 You can install the APImetrics CLI by downloading the binary from the [releases page](https://github.com/APImetrics/APImetrics-cli/releases).
 
@@ -141,7 +141,7 @@ by `project select`. To see which projects a service account can reach, run
 
 ## Passing Input
 
-All create and update commands read a JSON body from **stdin** using a heredoc. There is no `--body`, `--data`, or `-d` flag.
+Create and update commands take their body from **stdin** (a heredoc is the clearest way to write one) or from **CLI Shorthand** arguments. There is no `--body`, `--data`, or `-d` flag.
 
 ```bash
 apimetrics create-call <<'EOF'
