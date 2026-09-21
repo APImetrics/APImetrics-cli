@@ -12,7 +12,7 @@ import (
 	"github.com/alexeyco/simpletable"
 	"github.com/amzn/ion-go/ion"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/shamaton/msgpack/v2"
+	"github.com/shamaton/msgpack/v3"
 	"gopkg.in/yaml.v2"
 )
 
