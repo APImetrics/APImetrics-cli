@@ -43,7 +43,7 @@ Review both the SLO configuration and the evidence behind it. Do not recommend c
 
 ### 1. Discover SLO operations
 
-**There is exactly one SLO per project, not a list of named SLOs.** The real commands are `get-project-slo`, `update-project-slo` (also *creates* the project's SLO if none exists yet), and `delete-project-slo` — none of them take an SLO ID. Scope with `--apimetrics-project-id` only if targeting a different project than the active one. There is **no attainment, status, or error-budget endpoint** — the CLI returns the SLO *definition*, not computed attainment. Plan to derive attainment yourself from result and performance data (step 4).
+**There is exactly one SLO per project, not a list of named SLOs.** The real commands are `get-project-slo`, `update-project-slo` (also *creates* the project's SLO if none exists yet), and `delete-project-slo` — none of them take an SLO ID. Use the global `--project-id` flag only if targeting a different project than the active one. There is **no attainment, status, or error-budget endpoint** — the CLI returns the SLO *definition*, not computed attainment. Plan to derive attainment yourself from result and performance data (step 4).
 
 ```bash
 apimetrics get-project-slo -o json    # bare single object, not {results:[...]}
