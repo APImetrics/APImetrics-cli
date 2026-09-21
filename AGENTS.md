@@ -9,7 +9,7 @@ Instructions for AI coding agents (OpenAI Codex, Cursor, Gemini CLI, and any too
 
 ## Core facts about this CLI
 
-- **Commands are flat, generated from the platform's live OpenAPI description**: `list-calls`, `create-call`, `run-monitor` — not `calls create`. The set can change with the server spec, so treat `apimetrics --help` and `apimetrics <command> --help` as authoritative and inspect a command's help before assuming an option or body field. There is no `run-call`; `run-monitor <id>` starts a run for API, browser, and MCP monitors alike.
+- **Commands are flat, generated from the platform's live OpenAPI description**: `list-calls`, `create-call`, `run-monitor` — not `calls create`. The set can change with the server spec, so treat `apimetrics --help` and `apimetrics <command> --help` as authoritative and inspect a command's help before assuming an option or body field. `run-monitor <id>` is the single command that starts a run for any monitor type — API call, browser, or MCP.
 - **Create/update commands read JSON from stdin** via heredoc. There is no `--body`, `--data`, or `-d`:
   ```bash
   apimetrics create-call <<'EOF'
@@ -18,12 +18,12 @@ Instructions for AI coding agents (OpenAI Codex, Cursor, Gemini CLI, and any too
   ```
   CLI Shorthand is also accepted (`apimetrics create-call meta.name: "Health", request.method: GET, request.url: https://example.com/health`).
 - **Output**: `-o json` for machine use; `-f` projects with a shorthand query; `-q` adds confirmed query params. The command spec is cached ~24h and refreshes automatically; `--rsh-no-cache` forces a refresh.
-- **List envelopes are not uniform.** `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{ "meta": ..., "results": [...] }`; `list-schedules` returns `{ "data": [...] }`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{ "results": [...] }`. There is no `list-call-results` (use `list-results-by-call`) and no `list-slos`/`get-slo` (SLOs are one-per-project — see below). Inspect each command's own output before writing an `-f` path.
+- **List envelopes are not uniform.** `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{ "meta": ..., "results": [...] }`; `list-schedules` returns `{ "data": [...] }`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{ "results": [...] }`; `get-project-slo` returns a bare single SLO object (one SLO per project, not a list — see below). Inspect each command's own output before writing an `-f` path.
 - **`get-result` detail depends on caller role.** A below-ANALYST caller gets a summary only (`result_category`, `http_code`, `response_time` ms, `location_id`, `test`, `created`; `result_category` ∈ `PASS`/`FAIL`/`WARN`/`ERROR`/`TIMEOUT`/`QUEUED` — a separate `result` field carries a transport-completion value like `COMPLETE`, not the pass/fail outcome). An ANALYST-or-above caller (most project members) gets the full object by default — request/response bodies and headers, DNS/TLS detail, and `timing` component breakdown included. Don't assume a summary-only response; check `apimetrics get-result --help` and what actually comes back before reaching for `get-result-content`/`get-result-screenshot`/`query-*` commands.
 - **Percentiles are server-computed** by the `query-*-performance` commands (`measures`: `mean`/`p50`/`p90`/`p95`/`p99`; API `metrics`: `total`/`dns`/`connect`/`tls`/`ttfb`/`response`). Do not hand-average result summaries.
 - **API assertions** are set with `set-call-conditions <call-id>` (read with `get-call-conditions`), not in the `create-call` body.
 - **SLOs are one per project**, not a list of named SLOs. Use `get-project-slo`/`update-project-slo`/`delete-project-slo` (update-project-slo creates one if none exists); scope objectives with `include_tags`/`exclude_tags`, not a per-SLO ID.
-- **Bulk config-as-code** lives under the hidden `apimetrics bulk` group (`init <url>`, `status`, `diff [--remote]`, `pull`, `reset`, `push`). `init` needs a real resolvable URL (e.g. `qc-client.apimetrics.io/api/2/calls/`) — the `apimetrics:/monitors` form shown in the CLI's own `--help` example is not actually resolved by the tool and fails with a DNS lookup error on host `apimetrics`.
+- **Bulk config-as-code** lives under the hidden `apimetrics bulk` group (`init <url>`, `status`, `diff [--remote]`, `pull`, `reset`, `push`). `init` needs a real, resolvable URL — a full host+path against the CLI's configured API server (e.g. `qc-client.apimetrics.io/api/2/calls/`), not a bare collection name.
 - **Never print secrets.** Reference auth settings by ID (`auth_id`/`token_id`); never paste tokens, cookies, keys, or certificate contents.
 
 ## Workflows (skills)

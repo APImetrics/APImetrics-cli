@@ -93,7 +93,7 @@ EOF
 
 ### 3. Run the monitor on-demand
 
-There is no `run-call`. `run-monitor` takes the call ID as a positional argument and a JSON body (`{}` for defaults):
+`run-monitor` takes the call ID as a positional argument and a JSON body (`{}` for defaults):
 ```bash
 apimetrics run-monitor <call-id> <<'EOF'
 {}
@@ -110,7 +110,7 @@ The response contains a `result_id`. Save it for the next step.
 apimetrics get-result <result-id>
 ```
 
-Poll until `result_category` is no longer `QUEUED` (match by `result_id`). A successful result has `result_category: PASS` and an HTTP status code in the 2xx range. `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem. For the full run history of this call instead of a single result, use `list-results-by-call <call-id>` (there is no `list-call-results`):
+Poll until `result_category` is no longer `QUEUED` (match by `result_id`). A successful result has `result_category: PASS` and an HTTP status code in the 2xx range. `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem. For the full run history of this call instead of a single result, use `list-results-by-call <call-id>`:
 
 ```bash
 apimetrics list-results-by-call <call-id> -f body.results[0]
@@ -121,7 +121,7 @@ apimetrics list-results-by-call <call-id> -f body.results[0]
 ## Hard rules
 
 - Always verify the call ID before attaching to a schedule — attaching the wrong ID silently succeeds.
-- There is no `run-call` or `list-call-results` — use `run-monitor` (all monitor types) and `list-results-by-call`.
+- `run-monitor` and `list-results-by-call` work the same way across monitor types — API, browser, or MCP.
 - Do not poll results in a tight loop. Wait 5–10 seconds between checks; on-demand runs typically complete within 30 seconds.
 - `frequency` on schedules is in seconds, not minutes.
 - `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.

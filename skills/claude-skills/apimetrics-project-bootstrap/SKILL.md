@@ -31,7 +31,7 @@ Build a usable monitoring project from an empty or selected APImetrics project. 
    EOF
    ```
    Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. There is no `list-call-results` (use `list-results-by-call`) or `list-slos`/`get-slo` (SLOs are one per project — `get-project-slo` returns a bare single object). Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination; `get-project-slo` returns a bare single SLO object (one SLO per project, not a list). Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -215,16 +215,16 @@ Frequency is in seconds. The body also accepts `locations` (agent IDs), `regions
 
 ### 7. Verify on demand
 
-There is no `run-call`. One command, `run-monitor <id>`, runs API calls, browser monitors, and MCP monitors alike (there is no separate `run-mcp-monitor` either). It accepts an optional JSON body of `location_id`, `run_delay` (0–86400s), and `context`; with no body (`{}`) it runs at the default location:
+One command, `run-monitor <monitor-id>`, runs API calls, browser monitors, and MCP monitors alike (there is no separate `run-mcp-monitor`). It accepts an optional JSON body of `location_id`, `run_delay` (0–86400s), and `context`; with no body (`{}`) it runs at the default location:
 
 ```bash
-apimetrics run-monitor <call-or-monitor-id> <<'EOF'
+apimetrics run-monitor <monitor-id> <<'EOF'
 {}
 EOF
 apimetrics get-result <result-id> -o json
 ```
 
-`run-monitor` returns `{call_id, location_id, result_id, ...}`. For an API call's result history use `list-results-by-call <call-id>` (not `list-call-results`, which doesn't exist) — flags are `--from`, `--result-category`, `--cursor`, `--limit` (max 100), not `--since`/`--before`.
+`run-monitor` returns `{call_id, location_id, result_id, ...}`. For an API call's result history use `list-results-by-call <call-id>` — flags are `--from`, `--result-category`, `--cursor`, `--limit` (max 100).
 
 Wait between polls. Match the exact returned `result_id`. The `result_category` field is one of `PASS`, `FAIL`, `WARN`, `ERROR`, `TIMEOUT`, or `QUEUED` (a separate `result` field carries a transport-completion value like `COMPLETE`, not this enum); poll until it leaves `QUEUED`. **`get-result`'s detail depends on your role**: a below-ANALYST caller gets a summary only (`result_category`, `http_code`, `response_time` ms, `location_id`, `test`, `created`), but most project members (ANALYST or above) get the full object back by default — request/response bodies and headers, DNS/TLS detail, and a `timing` breakdown included, no separate call needed. Check what actually comes back before reaching for `get-result-content`/`get-result-screenshot`/the `query-*` commands for deeper forensics. A successful HTTP transport alone is not enough: verify the platform result status and any configured conditions.
 

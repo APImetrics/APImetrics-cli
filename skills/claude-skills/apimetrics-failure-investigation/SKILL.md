@@ -30,7 +30,7 @@ Find the failure boundary and the smallest evidence-backed remediation. Do not s
    EOF
    ```
    Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. There is no `list-call-results` (use `list-results-by-call`) or `list-slos`/`get-slo` (SLOs are one per project — `get-project-slo` returns a bare single object). Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination; `get-project-slo` returns a bare single SLO object (one SLO per project, not a list). Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -63,13 +63,13 @@ apimetrics get-result <result-id> -o json
 
 **Know what this returns — it depends on your role.** A below-ANALYST caller gets a *summary* from `get-result`: `result_category` (`PASS`/`FAIL`/`WARN`/`ERROR`/`TIMEOUT`/`QUEUED`), `http_code`, `response_time`, `location_id`, `test` (monitor ID), and `created`, with no component timings, DNS/TLS detail, headers, body, or assertion breakdowns. Most project members (ANALYST or above) instead get the **full** object by default — request/response headers and body, DNS details, TLS version, and a `timing` breakdown (`dns`/`tcp`/`handshake`/`upload`/`processing`/`download`/`total`) all included, no extra call needed. Check `apimetrics get-result --help` and what actually comes back before assuming you need step 3's dedicated commands — but still don't claim a DNS or TLS cause from a single result alone.
 
-For an API call series (the argument is the call/monitor ID; there is no `list-call-results` — use `list-results-by-call`, whose flags are `--from`, `--result-category`, `--cursor`, `--limit`, not `--since`/`--before`):
+For an API call series, use `list-results-by-call <call-id>`, whose flags are `--from`, `--result-category`, `--cursor`, `--limit`:
 
 ```bash
 apimetrics list-results-by-call <call-id> --from 2026-07-01T00:00:00Z -o json
 ```
 
-For a project-wide sweep across monitor types, use `list-results --from ... --time ...` (also not `--since`/`--before`). Discover browser/MCP result access from `apimetrics --help`.
+For a project-wide sweep across monitor types, use `list-results --from ... --time ...`. Discover browser/MCP result access from `apimetrics --help`.
 
 Also read the monitor configuration (`get-call`, `read-browser-monitor`, `read-mcp-monitor`), conditions (`get-call-conditions <call-id>`), schedule, auth-setting metadata, and related SLO where those commands exist.
 
@@ -129,9 +129,9 @@ For each candidate, list supporting and contradicting evidence.
 
 Run an on-demand check only when authorized and when it will not create harmful traffic.
 
-There is no `run-call`; `run-monitor <id>` runs API, browser, and MCP monitors alike:
+`run-monitor <monitor-id>` runs API, browser, and MCP monitors alike:
 ```bash
-apimetrics run-monitor <call-or-monitor-id> <<'EOF'
+apimetrics run-monitor <monitor-id> <<'EOF'
 {}
 EOF
 ```
