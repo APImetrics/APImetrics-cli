@@ -129,6 +129,6 @@ apimetrics list-results-by-call <call-id> -f body.results[0]
 ## Error recovery
 
 - **400 on create:** Missing required fields. Check `meta.name`, `request.url`, and `request.method` are all present and non-empty.
-- **401/403:** There is no `--api-key` flag — authentication is via `apimetrics login` (OAuth). Confirm login state and that a project is active with `apimetrics project show`.
+- **401/403:** Confirm login state and that a project is active with `apimetrics project show`.
 - **422 on run:** Project is out of quota. Check billing or reduce monitor frequency.
 - **No result after 60s:** The run may be queued behind other runs. Increase wait time or check monitor status.

@@ -118,6 +118,6 @@ apimetrics get-result-screenshot <result-id>
 ## Error recovery
 
 - **400 on create:** Confirm `name` and `url` are both provided and that the URL includes the scheme (`https://`).
-- **401/403:** There is no `--api-key` flag — authentication is via `apimetrics login` (OAuth). Confirm login state and that a project is active with `apimetrics project show`.
+- **401/403:** Confirm login state and that a project is active with `apimetrics project show`.
 - **No result after 120s:** Browser monitors may take longer in high-load periods. Check the monitor with `apimetrics read-browser-monitor <monitor-id>` and retry.
 - **Screenshot unavailable:** Not all result types include screenshots. Fall back to `get-result-content`.

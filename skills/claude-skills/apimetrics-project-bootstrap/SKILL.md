@@ -31,7 +31,7 @@ Build a usable monitoring project from an empty or selected APImetrics project. 
    EOF
    ```
    Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination; `get-project-slo` returns a bare single SLO object (one SLO per project, not a list). Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -66,7 +66,7 @@ apimetrics --help
 apimetrics project --help
 ```
 
-The `project` noun-group itself only exposes `select` and `show` — but project creation is a separate top-level command, `create-project-in-org <org-id>` (see the flat "Projects Commands" section of `apimetrics --help`, not the `project` subgroup). It requires org-admin rights; for a user without them it returns `403 Forbidden`, in which case use `apimetrics project select` to choose an existing project (created by an org admin or in the APImetrics web app) and state the permission limitation plainly.
+The `project` noun-group exposes `select` and `show`. Project creation is the top-level command `create-project-in-org <org-id>` (listed under "Projects Commands" in `apimetrics --help`). It requires org-admin rights; for a user without them it returns `403 Forbidden`, in which case use `apimetrics project select` to choose an existing project (created by an org admin or in the APImetrics web app) and state the permission limitation plainly.
 
 **If you do create a project with `create-project-in-org`, it does not grant you access to it.** Immediately follow with `create-project-access <project-id>` (body: `access_level` plus `account_id` or `email`) for your own account, or every subsequent `create-call`/monitor command in that project will 403. Verify with `list-project-access <project-id>` before proceeding.
 
@@ -215,7 +215,7 @@ Frequency is in seconds. The body also accepts `locations` (agent IDs), `regions
 
 ### 7. Verify on demand
 
-One command, `run-monitor <monitor-id>`, runs API calls, browser monitors, and MCP monitors alike (there is no separate `run-mcp-monitor`). It accepts an optional JSON body of `location_id`, `run_delay` (0–86400s), and `context`; with no body (`{}`) it runs at the default location:
+One command, `run-monitor <monitor-id>`, runs API calls, browser monitors, and MCP monitors alike. It accepts an optional JSON body of `location_id`, `run_delay` (0–86400s), and `context`; with no body (`{}`) it runs at the default location:
 
 ```bash
 apimetrics run-monitor <monitor-id> <<'EOF'
@@ -244,7 +244,7 @@ Re-list monitors and schedules. Produce:
 ## Failure handling
 
 - `400`: inspect current command help and required body fields.
-- `401/403`: re-authenticate and confirm the selected project; do not assume an unsupported `--api-key` flag.
+- `401/403`: re-authenticate with `apimetrics login` and confirm the selected project with `apimetrics project show`.
 - `409`: look for an existing duplicate and prefer reuse/update.
 - `422`: report quota or validation details exactly as returned.
 - no result: confirm the run was queued, use the exact result ID, and wait within the monitor timeout plus processing time.

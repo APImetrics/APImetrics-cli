@@ -127,7 +127,7 @@ Poll until `result_category` is no longer `QUEUED` (a separate `result` field ca
 ## Error recovery
 
 - **400 on create:** Confirm `name` and `url` are both provided and that the URL is a valid SSE endpoint.
-- **401/403:** There is no `--api-key` flag — authentication is via `apimetrics login` (OAuth). Confirm login state and that a project is active with `apimetrics project show`.
+- **401/403:** Confirm login state and that a project is active with `apimetrics project show`.
 - **Session timeout failures:** Increase `overall_timeout_ms` and re-run.
 - **422 on run:** Project is out of quota. Check billing or reduce monitor frequency.
 - **No result after 120s:** Verify the MCP server URL is reachable before retrying.
