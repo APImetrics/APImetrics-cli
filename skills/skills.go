@@ -240,7 +240,12 @@ func updateClaudeMD() error {
 	const path = "CLAUDE.md"
 	const ref = "@.claude/agents.md"
 
-	existing, _ := os.ReadFile(path)
+	// Only a missing file is safe to treat as empty. Any other read error means
+	// we cannot see the current contents, and writing would destroy them.
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
 
 	if bytes.Contains(existing, []byte(ref)) {
 		return nil
@@ -276,7 +281,8 @@ func buildAgentsMD(skillNames []string, bin string) string {
 
 	b.WriteString("## Critical facts\n\n")
 	b.WriteString("- Commands are flat: `list-calls`, `create-call`, `run-monitor`\n")
-	b.WriteString("- Create and update commands read their JSON body from stdin using heredoc syntax\n")
+	b.WriteString("- Create and update commands take their JSON body from stdin or from CLI Shorthand arguments\n")
+	b.WriteString("- Prefer stdin with heredoc syntax; it keeps nested JSON unambiguous\n")
 	b.WriteString(fmt.Sprintf("- Correct pattern: `%s create-call <<'EOF' ... EOF`\n\n", bin))
 
 	b.WriteString("## Skills\n\n")

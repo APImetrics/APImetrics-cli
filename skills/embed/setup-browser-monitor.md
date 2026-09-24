@@ -8,7 +8,8 @@ description: >
 
 ## Input format
 
-All `apimetrics` create commands read JSON from stdin. Use heredoc syntax:
+`apimetrics` create commands take their body from stdin or from CLI Shorthand
+arguments. Prefer stdin with heredoc syntax — it keeps nested JSON unambiguous:
 
 ```bash
 apimetrics create-browser-monitor <<'EOF'

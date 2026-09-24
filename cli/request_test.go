@@ -71,6 +71,19 @@ func (a *authHookFailure) OnRequest(req *http.Request, key string, params map[st
 }
 
 func TestAuthHookFailure(t *testing.T) {
+	// This test must not depend on what earlier tests left behind: `configs` is
+	// nil until initConfig runs, and an empty rsh-profile makes MakeRequest
+	// panic with "invalid profile" before it ever reaches the auth hook.
+	if configs == nil {
+		configs = apiConfigs{}
+	}
+	viper.Set("rsh-profile", "default")
+	t.Cleanup(func() {
+		viper.Set("rsh-profile", "")
+		delete(configs, "auth-hook-fail")
+		delete(authHandlers, "hook-fail")
+	})
+
 	configs["auth-hook-fail"] = &APIConfig{
 		Base: "http://auth-hook-fail.example.com",
 		Profiles: map[string]*APIProfile{
