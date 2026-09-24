@@ -33,7 +33,7 @@ Each entry names when to reach for it and the key commands. Full step-by-step wo
 | Workflow | Use when | Key commands |
 |---|---|---|
 | **project-bootstrap** | setting up monitoring / onboarding a service | `project select`, `create-project-in-org` + `create-project-access`, `create-call`/`create-browser-monitor`/`create-mcp-monitor`, `set-call-conditions`, `create-schedule`, `add-call-to-schedule`, `run-monitor` |
-| **weekly-health-review** | reliability report for the last 7 complete days | `list-results --from --time`, `query-api-performance`, `list-calls` |
+| **weekly-health-review** | reliability report for the last 7 complete days | `get-call-passfail-range`, `list-results --from --time`, `query-api-performance`, `list-calls` |
 | **failure-investigation** | root-causing one failing result or a series | `get-result`, `list-results-by-call --from --result-category`, `get-result-content`, `query-api-monitor-dns-diagnostics`, `get-call-conditions` |
 | **incident-triage** | blast radius / common cause across many monitors | `list-results --from --time`, `query-api-dns-diagnostics`, `query-api-performance` |
 | **monitoring-estate-audit** | coverage & hygiene governance review | `list-calls`, `list-schedules`, `get-project-slo`, `list-auth-settings`, `list-calls-by-auth` |

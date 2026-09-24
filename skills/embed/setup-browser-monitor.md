@@ -16,8 +16,6 @@ apimetrics create-browser-monitor <<'EOF'
 EOF
 ```
 
-There is no `--body`, `--data`, or `-d` flag on any `apimetrics` command.
-
 ## Steps
 
 ### 1. Create the browser monitor

@@ -19,14 +19,13 @@ Answer performance and latency questions with the platform's **server-computed**
    ```
    Run `apimetrics login` or `apimetrics project select` only when needed.
 3. The CLI command tree is generated from the platform's current OpenAPI description. Inspect `apimetrics <command> --help` before constructing a body or assuming an option name.
-4. Commands are generally flat (`query-api-performance`), not noun/verb groups.
+4. Commands are generally flat (`query-api-performance`).
 5. The `query-*` commands read a JSON body from stdin. Use a quoted heredoc:
    ```bash
    apimetrics query-api-performance <<'EOF'
    { "from": "...", "to": "..." }
    EOF
    ```
-   Do not invent `--body`, `--data`, or `-d`.
 6. Use `-o json` for analysis. Query responses are `{meta, results:[...]}`, where `meta` echoes the requested `from`/`to`/`measures`/`metrics`/`group_by` so you can confirm the CLI honored your request.
 7. Use `-q key=value` only for query parameters confirmed by command help.
 8. Preserve evidence. Record the active project, commands run, IDs, exact window, and the smallest response excerpts needed to support conclusions.

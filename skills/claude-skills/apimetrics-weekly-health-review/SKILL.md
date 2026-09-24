@@ -20,7 +20,7 @@ Analyze the previous seven complete calendar days in the active project's timezo
    ```
    Run `apimetrics login` or `apimetrics project select` only when needed.
 3. The CLI command tree is generated from the platform's current OpenAPI description. Inspect `apimetrics <command> --help` before constructing a body or assuming an option name.
-4. Commands are generally flat (`list-calls`, `create-call`), not noun/verb groups.
+4. Commands are generally flat (`list-calls`, `create-call`).
 5. Create and update operations read JSON from stdin. Use a quoted heredoc:
    ```bash
    apimetrics <create-or-update-command> ... <<'EOF'
@@ -29,7 +29,6 @@ Analyze the previous seven complete calendar days in the active project's timezo
    }
    EOF
    ```
-   Do not invent `--body`, `--data`, or `-d`.
 6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
@@ -64,6 +63,7 @@ apimetrics list-schedules -o json             # {data:[...]}  (note: data, not r
 apimetrics list-results --from <ISO> --time <ISO> -o json   # project-wide result summaries
 apimetrics list-results-by-call <call-id> --from <ISO> --time <ISO> -o json
 apimetrics get-result <result-id> -o json     # summary for below-ANALYST callers; full detail otherwise — see below
+apimetrics get-call-passfail-range <call-id> --kind DAY --start <ISO> --end <ISO> -o json   # server-counted pass/warning/failure per day
 ```
 
 `list-results` and `list-results-by-call` support **server-side** `--from`/`--time` (ISO-8601) plus `--result-category`, `--limit` (max 100), and `--cursor` — prefer these over pulling everything and filtering by hand. `list-results.meta.more`/`next_cursor` drive pagination.
@@ -101,7 +101,8 @@ Flag unscheduled, disabled, orphaned, and never-run monitors separately; do not 
 
 Two complementary sources, both with `-o json`:
 
-- **Availability / pass-fail** — `list-results --from --time` (project-wide) or `list-results-by-call <call-id> --from --time` (per monitor). Each row gives `result_category`, `http_code`, `response_time`, `location_id`, `test`, `created`. Page with `--cursor` until `meta.more` is false. Count by `result_category`; do not disable pagination unless intentionally sampling.
+- **Availability / pass-fail** — `get-call-passfail-range <call-id> --kind DAY --start --end` per monitor returns server-counted `pass`/`warning`/`failure` per day; sum across monitors for the project figure.
+- **Failure detail** — `list-results --from --time --result-category <cat>` (project-wide) or `list-results-by-call <call-id> --from --time` (per monitor) for the individual failing runs behind those counts. Each row gives `result_category`, `http_code`, `response_time`, `location_id`, `test`, `created`; page with `--cursor` until `meta.more` is false.
 - **Latency distribution** — the `query-*-performance` commands from step 2, which return server-computed `mean`/`p50`/`p95`/`p99` per metric, optionally grouped by monitor, location, and interval.
 
 For conformance signal, `conformance-results-summary` is available but best-effort (it can return a 500 on projects with no conformance data — treat a failure as "no data", not a finding).
@@ -111,7 +112,7 @@ For conformance signal, `conformance-results-summary` is available but best-effo
 For the project and each meaningful monitor/segment, report:
 
 - total runs and runs with usable data
-- pass count, fail count, warning/error/timeout count (the `result_category` values are `PASS`, `FAIL`, `WARN`, `ERROR`, `TIMEOUT`, `QUEUED`)
+- pass, warning, and failure counts from `get-call-passfail-range`; split failures by `result_category` (`FAIL`, `ERROR`, `TIMEOUT`; other values are `PASS`, `WARN`, `QUEUED`) from the failure detail when the breakdown matters
 - availability/pass rate
 - median (`p50`) and `p95` latency **from `query-*-performance`**, not estimated from summaries
 - slowest monitors and locations (`group_by: ["monitor"]` / `["location"]`)
@@ -119,7 +120,7 @@ For the project and each meaningful monitor/segment, report:
 - recurring failure signatures (`http_code` + `result_category` patterns)
 - location-specific or time-of-day concentration (`group_by` with `interval`)
 - changes versus the preceding week (run the same query for the prior window)
-- SLO status/error budget when directly available
+- SLO attainment against the `get-project-slo` objectives, from the same server-side aggregates (see `apimetrics-slo-review`)
 
 If the `query-*` commands return empty for the window (no data), say so explicitly rather than reporting a rate over zero runs. Label any hand-derived figure and its denominator.
 

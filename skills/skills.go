@@ -275,8 +275,8 @@ func buildAgentsMD(skillNames []string, bin string) string {
 	b.WriteString("2. Invoke the relevant skill for the task.\n\n")
 
 	b.WriteString("## Critical facts\n\n")
-	b.WriteString("- Commands are flat, not grouped: use `create-call`, not `calls create`\n")
-	b.WriteString("- All create commands read JSON from stdin using heredoc syntax — there is no `--body`, `--data`, or `-d` flag\n")
+	b.WriteString("- Commands are flat: `list-calls`, `create-call`, `run-monitor`\n")
+	b.WriteString("- Create and update commands read their JSON body from stdin using heredoc syntax\n")
 	b.WriteString(fmt.Sprintf("- Correct pattern: `%s create-call <<'EOF' ... EOF`\n\n", bin))
 
 	b.WriteString("## Skills\n\n")
