@@ -20,7 +20,7 @@ Perform a read-only audit by default. The deliverable is a prioritized cleanup a
    ```
    Run `apimetrics login` or `apimetrics project select` only when needed.
 3. The CLI command tree is generated from the platform's current OpenAPI description. Inspect `apimetrics <command> --help` before constructing a body or assuming an option name.
-4. Commands are generally flat (`list-calls`, `create-call`), not noun/verb groups.
+4. Commands are generally flat (`list-calls`, `create-call`).
 5. Create and update operations read JSON from stdin. Use a quoted heredoc:
    ```bash
    apimetrics <create-or-update-command> ... <<'EOF'
@@ -29,8 +29,7 @@ Perform a read-only audit by default. The deliverable is a prioritized cleanup a
    }
    EOF
    ```
-   Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -49,10 +48,10 @@ Run the available list/read commands (JSON output), noting each envelope shape:
 - browser monitors — `list-browser-monitors` (bare `{results}`)
 - MCP monitors — `list-mcp-monitors` (bare `{results}`)
 - schedules — `list-schedules` (**`{data:[...]}`**), plus `list-schedule-downtimes` for maintenance windows
-- SLOs — `list-slos` (bare `{results}`), detail via `get-slo <slo-id>`
+- SLO — `get-project-slo` (a single object per project, scoped via `include_tags`/`exclude_tags`)
 - auth settings/tokens as metadata only — `list-auth-settings`, and `list-calls-by-auth <auth-id>` to size the blast radius of each shared credential
-- recent results — `list-results --since <ISO>` for working-vs-configured coverage
-- which schedules a call belongs to — `list-schedules-for-call <call-id>`
+- recent results — `list-results --from <ISO>` for working-vs-configured coverage
+- which schedules a call belongs to — `list-schedules-by-call <call-id>`
 
 ### 2. Normalize the inventory
 

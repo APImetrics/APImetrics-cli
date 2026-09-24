@@ -17,8 +17,6 @@ apimetrics create-call <<'EOF'
 EOF
 ```
 
-There is no `--body`, `--data`, or `-d` flag on any `apimetrics` command.
-
 ## Steps
 
 ### 1. Create the API monitor
@@ -94,9 +92,11 @@ EOF
 
 ### 3. Run the monitor on-demand
 
-`run-call` takes the call ID as a positional argument:
+`run-monitor` takes the call ID as a positional argument and a JSON body (`{}` for defaults):
 ```bash
-apimetrics run-call <call-id>
+apimetrics run-monitor <call-id> <<'EOF'
+{}
+EOF
 ```
 
 The response contains a `result_id`. Save it for the next step.
@@ -106,20 +106,21 @@ The response contains a `result_id`. Save it for the next step.
 ### 4. Poll results to verify
 
 ```bash
-apimetrics list-call-results <call-id>
+apimetrics get-result <result-id>
 ```
 
-A successful result has `result.success: true` and an HTTP status code in the 2xx range. Poll until the result from step 3 appears (match by `result_id`). Use `-f` to narrow output:
+Poll until `result_category` is no longer `QUEUED` (match by `result_id`). A successful result has `result_category: PASS` and an HTTP status code in the 2xx range. `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem. For the full run history of this call instead of a single result, use `list-results-by-call <call-id>`:
 
 ```bash
-apimetrics list-call-results <call-id> -f body.results[0]
+apimetrics list-results-by-call <call-id> -f body.results[0]
 ```
 
-**Validation gate:** Confirm `result.success` is `true`. If `false`, inspect `result.failure_reason` and the response body for details.
+**Validation gate:** Confirm `result_category` is `PASS`. If not, inspect the result (a below-ANALYST caller only gets a summary from `get-result`; most project members get the full request/response/timing detail by default) for the failure cause.
 
 ## Hard rules
 
 - Always verify the call ID before attaching to a schedule — attaching the wrong ID silently succeeds.
+- `run-monitor` and `list-results-by-call` work the same way across monitor types — API, browser, or MCP.
 - Do not poll results in a tight loop. Wait 5–10 seconds between checks; on-demand runs typically complete within 30 seconds.
 - `frequency` on schedules is in seconds, not minutes.
 - `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.
@@ -127,6 +128,6 @@ apimetrics list-call-results <call-id> -f body.results[0]
 ## Error recovery
 
 - **400 on create:** Missing required fields. Check `meta.name`, `request.url`, and `request.method` are all present and non-empty.
-- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project show` to check the active project.
+- **401/403:** Confirm login state and that a project is active with `apimetrics project show`.
 - **422 on run:** Project is out of quota. Check billing or reduce monitor frequency.
 - **No result after 60s:** The run may be queued behind other runs. Increase wait time or check monitor status.

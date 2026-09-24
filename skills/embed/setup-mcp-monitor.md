@@ -17,8 +17,6 @@ apimetrics create-mcp-monitor <<'EOF'
 EOF
 ```
 
-There is no `--body`, `--data`, or `-d` flag on any `apimetrics` command.
-
 ## Steps
 
 ### 1. Create the MCP monitor
@@ -111,9 +109,9 @@ Save the `result_id` from the response — used in the next step.
 apimetrics get-result <result-id>
 ```
 
-Poll until `result` is no longer `QUEUED`. Allow up to the `overall_timeout_ms` value plus processing time. Wait 10–15 seconds between checks.
+Poll until `result_category` is no longer `QUEUED` (a separate `result` field carries a transport-completion value like `COMPLETE`, not the pass/fail outcome). Allow up to the `overall_timeout_ms` value plus processing time. Wait 10–15 seconds between checks.
 
-**Validation gate:** `result` must be `PASS`. Values of `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem. Common failure causes: unreachable server, auth failure, or a step that did not return the expected tool response.
+**Validation gate:** `result_category` must be `PASS`. Values of `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem. Common failure causes: unreachable server, auth failure, or a step that did not return the expected tool response.
 
 ## Hard rules
 
@@ -128,7 +126,7 @@ Poll until `result` is no longer `QUEUED`. Allow up to the `overall_timeout_ms` 
 ## Error recovery
 
 - **400 on create:** Confirm `name` and `url` are both provided and that the URL is a valid SSE endpoint.
-- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project show` to check the active project.
+- **401/403:** Confirm login state and that a project is active with `apimetrics project show`.
 - **Session timeout failures:** Increase `overall_timeout_ms` and re-run.
 - **422 on run:** Project is out of quota. Check billing or reduce monitor frequency.
 - **No result after 120s:** Verify the MCP server URL is reachable before retrying.
