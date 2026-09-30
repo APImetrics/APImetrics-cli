@@ -120,7 +120,7 @@ apimetrics list-results-by-call <call-id> -f body.results[0]
 ## Hard rules
 
 - Always verify the call ID before attaching to a schedule — attaching the wrong ID silently succeeds.
-- `run-monitor` and `list-results-by-call` work the same way across monitor types — API, browser, or MCP.
+- `run-monitor` starts a run for any monitor type — API, browser, or MCP. `list-results-by-call` is API-call only.
 - Do not poll results in a tight loop. Wait 5–10 seconds between checks; on-demand runs typically complete within 30 seconds.
 - `frequency` on schedules is in seconds, not minutes.
 - `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.
