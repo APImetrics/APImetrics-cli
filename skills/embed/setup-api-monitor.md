@@ -109,10 +109,10 @@ The response contains a `result_id`. Save it for the next step.
 apimetrics get-result <result-id>
 ```
 
-Poll until `result_category` is no longer `QUEUED` (match by `result_id`). A successful result has `result_category: PASS` and an HTTP status code in the 2xx range. `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem. For the full run history of this call instead of a single result, use `list-results-by-call <call-id>`:
+Poll until `result_category` is no longer `QUEUED` (match by `result_id`). A successful result has `result_category: PASS` and an HTTP status code in the 2xx range. `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem. For the full run history of this monitor instead of a single result, use `list-results-by-call <monitor-id>`:
 
 ```bash
-apimetrics list-results-by-call <call-id> -f body.results[0]
+apimetrics list-results-by-call <monitor-id> -f body.results[0]
 ```
 
 **Validation gate:** Confirm `result_category` is `PASS`. If not, inspect the result (a below-ANALYST caller only gets a summary from `get-result`; most project members get the full request/response/timing detail by default) for the failure cause.
@@ -120,7 +120,7 @@ apimetrics list-results-by-call <call-id> -f body.results[0]
 ## Hard rules
 
 - Always verify the call ID before attaching to a schedule — attaching the wrong ID silently succeeds.
-- `run-monitor` starts a run for any monitor type — API, browser, or MCP. `list-results-by-call` is API-call only.
+- `run-monitor` starts a run, and `list-results-by-call` lists result history, for any monitor type — API, browser, or MCP.
 - Do not poll results in a tight loop. Wait 5–10 seconds between checks; on-demand runs typically complete within 30 seconds.
 - `frequency` on schedules is in seconds, not minutes.
 - `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.

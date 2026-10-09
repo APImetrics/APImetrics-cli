@@ -62,13 +62,13 @@ apimetrics get-result <result-id> -o json
 
 **Know what this returns — it depends on your role.** A below-ANALYST caller gets a *summary* from `get-result`: `result_category` (`PASS`/`FAIL`/`WARN`/`ERROR`/`TIMEOUT`/`QUEUED`), `http_code`, `response_time`, `location_id`, `test` (monitor ID), and `created`, with no component timings, DNS/TLS detail, headers, body, or assertion breakdowns. Most project members (ANALYST or above) instead get the **full** object by default — request/response headers and body, DNS details, TLS version, and a `timing` breakdown (`dns`/`tcp`/`handshake`/`upload`/`processing`/`download`/`total`) all included, no extra call needed. Check `apimetrics get-result --help` and what actually comes back before assuming you need step 3's dedicated commands — but still don't claim a DNS or TLS cause from a single result alone.
 
-For an API call series, use `list-results-by-call <call-id>`, whose flags are `--from`, `--result-category`, `--cursor`, `--limit`:
+For a series from one monitor of any type (API, browser, or MCP), use `list-results-by-call <monitor-id>`, whose flags are `--from`, `--result-category`, `--cursor`, `--limit`:
 
 ```bash
-apimetrics list-results-by-call <call-id> --from 2026-07-01T00:00:00Z -o json
+apimetrics list-results-by-call <monitor-id> --from 2026-07-01T00:00:00Z -o json
 ```
 
-For a project-wide sweep across monitor types, use `list-results --from ... --time ...`. Discover browser/MCP result access from `apimetrics --help`.
+For a project-wide sweep across all monitors, use `list-results --from ... --time ...`.
 
 Also read the monitor configuration (`get-call`, `read-browser-monitor`, `read-mcp-monitor`), conditions (`get-call-conditions <call-id>`), schedule, auth-setting metadata, and related SLO where those commands exist.
 

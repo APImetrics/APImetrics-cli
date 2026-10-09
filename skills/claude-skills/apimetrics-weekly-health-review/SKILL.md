@@ -61,7 +61,7 @@ Run `apimetrics --help` and inspect help for the available inventory, result, an
 apimetrics list-calls -o json                 # {meta, results:[...]}
 apimetrics list-schedules -o json             # {data:[...]}  (note: data, not results)
 apimetrics list-results --from <ISO> --time <ISO> -o json   # project-wide result summaries
-apimetrics list-results-by-call <call-id> --from <ISO> --time <ISO> -o json
+apimetrics list-results-by-call <monitor-id> --from <ISO> --time <ISO> -o json
 apimetrics get-result <result-id> -o json     # summary for below-ANALYST callers; full detail otherwise — see below
 apimetrics get-call-passfail-range <call-id> --kind DAY --start <ISO> --end <ISO> -o json   # server-counted pass/warning/failure per day
 ```
@@ -102,7 +102,7 @@ Flag unscheduled, disabled, orphaned, and never-run monitors separately; do not 
 Two complementary sources, both with `-o json`:
 
 - **Availability / pass-fail** — `get-call-passfail-range <call-id> --kind DAY --start --end` per monitor returns server-counted `pass`/`warning`/`failure` per day; sum across monitors for the project figure.
-- **Failure detail** — `list-results --from --time --result-category <cat>` (project-wide) or `list-results-by-call <call-id> --from --time` (per monitor) for the individual failing runs behind those counts. Each row gives `result_category`, `http_code`, `response_time`, `location_id`, `test`, `created`; page with `--cursor` until `meta.more` is false.
+- **Failure detail** — `list-results --from --time --result-category <cat>` (project-wide) or `list-results-by-call <monitor-id> --from --time` (per monitor, any type) for the individual failing runs behind those counts. Each row gives `result_category`, `http_code`, `response_time`, `location_id`, `test`, `created`; page with `--cursor` until `meta.more` is false.
 - **Latency distribution** — the `query-*-performance` commands from step 2, which return server-computed `mean`/`p50`/`p95`/`p99` per metric, optionally grouped by monitor, location, and interval.
 
 For conformance signal, `conformance-results-summary` is available but best-effort (it can return a 500 on projects with no conformance data — treat a failure as "no data", not a finding).
