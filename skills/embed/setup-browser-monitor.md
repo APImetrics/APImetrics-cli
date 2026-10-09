@@ -9,7 +9,8 @@ description: >
 ## Input format
 
 `apimetrics` create commands take their body from stdin or from CLI Shorthand
-arguments. Prefer stdin with heredoc syntax — it keeps nested JSON unambiguous:
+arguments (in shorthand, quote values containing `//` and add `</dev/null` when
+running non-interactively). Prefer stdin with heredoc syntax — it keeps nested JSON unambiguous:
 
 ```bash
 apimetrics create-browser-monitor <<'EOF'
@@ -34,12 +35,12 @@ Save the returned `id` — used in all subsequent steps.
 
 Optional fields:
 - `"description"` — human-readable description
-- `"browser_types"` — list of browsers the monitor is permitted to run on
+- `"browser_types"` — list of browsers the monitor is permitted to run on (`chromium`, `firefox`, `webkit`, `camoufox`; default `["camoufox"]`)
 - `"tags"` — list of tags for grouping
 - `"user_agent"` — override the User-Agent header
 - `"workspace"` — workspace ID if using workspaces
 
-**Validation gate:** Response must contain an `id` field. If creation fails with 400, confirm `name` and `url` are both present and that `url` includes the scheme (`https://`).
+**Validation gate:** Response must contain an `id` field. A 422 means `name` or `url` is missing (`detail[].loc` names it). Always include the scheme (`https://`): the server accepts a scheme-less URL and creates a monitor with an empty domain.
 
 ### 2. Attach a schedule
 
@@ -75,7 +76,7 @@ EOF
 
 `frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
 
-**Validation gate:** Confirm the schedule lists the monitor ID in its targets before proceeding.
+**Validation gate:** Confirm the schedule lists the monitor ID in `schedule.target_ids` before proceeding (the schedule's own ID is at `meta.id`).
 
 ### 3. Run the monitor on-demand
 
@@ -96,27 +97,27 @@ Save the `result_id` from the response — used in the next step.
 apimetrics get-result <result-id>
 ```
 
-Poll until `result_category` is no longer `QUEUED` (a separate `result` field carries a transport-completion value like `COMPLETE`, not the pass/fail outcome). Wait 10–15 seconds between checks (browser monitors typically complete within 60 seconds).
+Poll until `meta.result` is no longer `QUEUED`; `meta.result_category` is empty until then. Wait 10–15 seconds between checks (browser runs typically complete in well under a minute).
 
-**Validation gate:** `result_category` must be `PASS`. Values of `FAIL`, `WARN`, `ERROR`, or `TIMEOUT` indicate a problem — inspect the response for details.
+**Validation gate:** `meta.result_category` must be `PASS`. `SLOW` means it passed but was slow; `WARNING` or `FAIL` indicate a problem — check `meta.result` and `meta.http_code` for the cause.
 
-To get a screenshot of the page at the time of the run:
+To save a screenshot of the page at the time of the run (a binary JPEG written to stdout):
 ```bash
-apimetrics get-result-screenshot <result-id>
+apimetrics get-result-screenshot <result-id> > screenshot.jpg
 ```
 
 ## Hard rules
 
-- Always verify the monitor ID before attaching to a schedule — attaching the wrong ID silently succeeds.
+- Always verify the monitor ID before attaching to a schedule. Invalid or other-project IDs are rejected with 400, but a valid ID of a different monitor in this project is accepted without warning.
 - `run-monitor` and `get-result` take positional arguments — do not use `--monitor-id` or `--result-id` flags.
 - `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.
-- Browser monitors take longer to complete than API monitors — wait at least 60 seconds before polling results.
+- Browser monitors take longer to complete than API monitors — make the first poll about 15 seconds after the run starts.
 - Do not poll results in a tight loop. Wait 10–15 seconds between checks.
 - `frequency` on schedules is in seconds, not minutes.
 
 ## Error recovery
 
-- **400 on create:** Confirm `name` and `url` are both provided and that the URL includes the scheme (`https://`).
+- **422 on create:** `name` or `url` is missing; `detail[].loc` names it. Include the scheme (`https://`) in the URL.
 - **401/403:** Confirm login state and that a project is active with `apimetrics project show`.
 - **No result after 120s:** Browser monitors may take longer in high-load periods. Check the monitor with `apimetrics read-browser-monitor <monitor-id>` and retry.
-- **Screenshot unavailable:** Not all result types include screenshots. Fall back to `get-result-content`.
+- **Screenshot unavailable:** Not all results include screenshots. Fall back to `get-result <result-id>` (most project members get the response detail inline) or `get-result-content <result-id> <path>`.

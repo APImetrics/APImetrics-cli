@@ -20,8 +20,8 @@ Use project-wide evidence to distinguish an isolated monitor failure from a shar
    ```
    Run `apimetrics login` or `apimetrics project select` only when needed.
 3. The CLI command tree is generated from the platform's current OpenAPI description. Inspect `apimetrics <command> --help` before constructing a body or assuming an option name.
-4. Commands are generally flat (`list-calls`, `create-call`).
-5. Create and update operations read JSON from stdin. Use a quoted heredoc:
+4. Commands are generally flat (`list-calls`, `create-call`). A command the server has deprecated is hidden from `--help` and prints `Command "X" is deprecated, do not use` on stderr; use the replacement `--help` lists (for example `list-api-monitors`/`list-monitors` and `create-api-monitor` where `list-calls`/`create-call` are deprecated).
+5. Create and update operations read JSON from stdin (CLI Shorthand arguments also work, but quote any value containing `//` and add `</dev/null`, since shorthand also reads stdin). Prefer a quoted heredoc:
    ```bash
    apimetrics <create-or-update-command> ... <<'EOF'
    {
@@ -29,8 +29,8 @@ Use project-wide evidence to distinguish an isolated monitor failure from a shar
    }
    EOF
    ```
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
-7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
+6. Use `-o json` for analysis; it prints the response body. Use `-f` only after inspecting the response shape: `-f` paths are rooted at the whole response (`status`, `headers`, `body`), so they start with `body.`, and a path that matches nothing prints nothing — empty `-f` output is not evidence of an empty list. List bodies are NOT uniform: `list-calls`, `list-api-monitors`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` and `list-monitors` return `{"data":[...], "meta":...}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Single-quote `-f` paths so the shell doesn't expand `[]` (e.g. `-f 'body.results[0]'` vs `-f 'body.data[0]'`).
+7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation; the CLI appends it without validation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
 10. Do not mutate project configuration unless the user explicitly authorized the change. Before any mutation, show the planned objects and rollback path.
@@ -42,19 +42,19 @@ Use project-wide evidence to distinguish an isolated monitor failure from a shar
 
 ### 1. Define the incident window
 
-Set exact start/end timestamps and timezone. Default to a narrow window around the reported symptom, then expand only when necessary.
+Set exact start/end timestamps and timezone, as full ISO-8601 date-times (the server buckets in UTC). Default to a narrow window around the reported symptom, then expand only when necessary.
 
 ### 2. Inventory and collect failures
 
 Collect the project-wide result stream for the window with server-side filtering, then segment:
 
 ```bash
-apimetrics list-results --from <ISO> --time <ISO> -o json   # {meta, results:[...]}, page via meta.next_cursor
+apimetrics list-results --from <ISO> --time <ISO> -o json   # {meta, results:[...]}, one page per call
 ```
 
-(`list-results` takes `--from` (start) and `--time` (end), plus `--result-category`/`--cursor`/`--limit`.)
+(`list-results` takes `--from` (start) and `--time` (end), plus `--result-category`/`--cursor`/`--limit` (default 100). Always pass `--from` — without it only a short recent window is searched. `--time` is truncated to the minute, so round the window end up. Repeat with `--cursor <meta.next_cursor>` while `meta.more` is true. `--result-category` takes `PASS`/`SLOW`/`WARNING`/`FAIL` and silently ignores any other value, returning every category; failures span both `FAIL` (e.g. connection errors) and `WARNING` (HTTP 4xx), so collect both.)
 
-Each row gives `result_category`, `http_code`, `response_time`, `location_id`, and `test` (monitor ID) — enough to segment by monitor, status, and location. For shared-cause hypotheses, use `query-api-dns-diagnostics` (DNS provider/IP/CNAME drift by location) and `query-api-performance` (latency shift by location/interval) over the incident window. Map monitor IDs back to names/hosts/auth with `list-calls`, `list-browser-monitors`, `list-mcp-monitors`, and `list-auth-settings`. Identify:
+Each row is `{id, meta, timing}`: `meta.result_category`, `meta.result` (failure detail such as `HTTP_CLIENT_ERROR` or `CONNECTION_ERROR`), `meta.http_code`, `meta.location_id`, `meta.call_id` (monitor ID), `meta.start_time`, and `timing.total` (ms, with `dns`/`tcp`/`handshake`/`processing`/`download` components) — enough to segment by monitor, status, and location. For shared-cause hypotheses, use `query-api-dns-diagnostics` (DNS provider/IP/CNAME drift by location) and `query-api-performance` (latency shift by location/interval) over the incident window. Map `meta.call_id` back to names/types/hosts with `list-monitors` (every type; `{data:[...], meta}`, type in `meta.monitor_type`) or `list-calls`/`list-browser-monitors`/`list-mcp-monitors`, and to auth with `list-auth-settings`. Project these with `-f` to the fields you need — monitor `request.headers`/`request.body` and auth settings can hold literal credentials. Identify:
 
 - affected monitors and unaffected controls
 - target hosts/services

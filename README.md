@@ -160,8 +160,10 @@ EOF
 You can also use **CLI Shorthand** as a concise alternative to JSON:
 
 ```bash
-apimetrics create-call meta.name: "My API Check", request.method: GET, request.url: https://api.example.com/health
+apimetrics create-call meta.name: "My API Check", request.method: GET, request.url: '"https://api.example.com/health"'
 ```
+
+Quote any shorthand value that contains `//` (such as a URL), as above; unquoted, the shorthand parser rejects it. Shorthand also reads stdin and merges it with the arguments, so in scripts and other non-interactive shells redirect stdin from `/dev/null` (`... </dev/null`) or the command waits for input.
 
 Or pipe from a file:
 
@@ -183,15 +185,17 @@ Use `-o` / `--rsh-output-format` to control output:
 | `gron` | Grep-friendly flattened format |
 
 ```bash
-# Table output
-apimetrics list-calls -o table
+# Table output (list bodies are objects, so project an array first)
+apimetrics list-calls -o table -f 'body.results[].{id: id, name: meta.name}'
 
 # Raw JSON for scripting
 apimetrics list-calls -o json
 
 # Filter results with a query expression
-apimetrics list-calls -f body[0].meta.name
+apimetrics list-calls -f 'body.results[0].meta.name'
 ```
+
+`-f` paths are rooted at the whole response (`status`, `headers`, `body`), so they start with `body.`; single-quote them so the shell doesn't expand `[]`. A path that matches nothing prints nothing.
 
 When output is redirected to a pipe or file, color is disabled and only the body is printed as JSON automatically.
 
@@ -279,7 +283,7 @@ Read-only skills load automatically when a request matches; the two mutation ski
 
 ### Other agents (OpenAI Codex, Cursor, Gemini CLI, …)
 
-The repo root ships an [`AGENTS.md`](AGENTS.md) — the cross-agent standard read by OpenAI Codex, Cursor, Gemini CLI, and others — that carries the same core CLI facts and workflow index. Any agent can also pull the full workflows on demand with `apimetrics onboard`.
+The repo root ships an [`AGENTS.md`](AGENTS.md) — the cross-agent standard read by OpenAI Codex, Cursor, Gemini CLI, and others — that carries the same core CLI facts and workflow index. Any agent can also pull the full workflows on demand with `apimetrics onboard`, which prints the three setup skills followed by all eight workflow skills.
 
 ## Configuration
 
