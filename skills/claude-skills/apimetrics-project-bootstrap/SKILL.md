@@ -31,7 +31,7 @@ Build a usable monitoring project from an empty or selected APImetrics project. 
    EOF
    ```
    Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -213,14 +213,14 @@ Frequency is in seconds. The body also accepts `locations` (agent IDs), `regions
 
 ### 7. Verify on demand
 
-For API calls (`run-call` accepts an optional body of `location_id`, `run_delay` (0–86400s), and `context`; with no body it runs at the default location):
+For API calls (`run-monitor` accepts an optional body of `location_id`, `run_delay` (0–86400s), and `context`; with no body it runs at the default location):
 
 ```bash
-apimetrics run-call <call-id>
-apimetrics list-call-results <call-id> -o json
+apimetrics run-monitor <call-id>
+apimetrics list-results-by-call <call-id> -o json
 ```
 
-`run-call` returns `{call_id, location_id, result_id}`. `list-call-results` takes the call ID and supports `--since`/`--before` (ISO-8601) and `--limit` (max 100).
+`run-monitor` returns `{call_id, context, location_id, result_id, user}`. `list-results-by-call` takes the call ID and supports `--from` (window start) / `--time` (window end), as full ISO-8601 timestamps, and `--limit` (max 100).
 
 For browser or MCP monitors (both use `run-monitor`; there is no `run-mcp-monitor` command):
 

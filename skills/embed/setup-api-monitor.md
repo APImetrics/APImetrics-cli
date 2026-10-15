@@ -94,9 +94,9 @@ EOF
 
 ### 3. Run the monitor on-demand
 
-`run-call` takes the call ID as a positional argument:
+`run-monitor` takes the call ID as a positional argument:
 ```bash
-apimetrics run-call <call-id>
+apimetrics run-monitor <call-id>
 ```
 
 The response contains a `result_id`. Save it for the next step.
@@ -106,16 +106,16 @@ The response contains a `result_id`. Save it for the next step.
 ### 4. Poll results to verify
 
 ```bash
-apimetrics list-call-results <call-id>
+apimetrics list-results-by-call <call-id>
 ```
 
-A successful result has `result.success: true` and an HTTP status code in the 2xx range. Poll until the result from step 3 appears (match by `result_id`). Use `-f` to narrow output:
+A successful result has `meta.result_category: "PASS"` and an HTTP status code (`meta.http_code`) in the 2xx range. Poll until the result from step 3 appears (match `id` against the `result_id`). Use `-f` to narrow output:
 
 ```bash
-apimetrics list-call-results <call-id> -f body.results[0]
+apimetrics list-results-by-call <call-id> -f body.results[0]
 ```
 
-**Validation gate:** Confirm `result.success` is `true`. If `false`, inspect `result.failure_reason` and the response body for details.
+**Validation gate:** Confirm `meta.result_category` is `PASS`. If not, inspect `meta.result` and fetch the response body with `get-result-content <result-id>`.
 
 ## Hard rules
 

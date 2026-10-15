@@ -30,7 +30,7 @@ Review both the SLO configuration and the evidence behind it. Do not recommend c
    EOF
    ```
    Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -75,7 +75,7 @@ Flag missing ownership, ambiguous scope, unattached SLOs, conflicting windows, a
 
 Because the CLI exposes no attainment endpoint, reconstruct it from the monitors the SLO scopes (via `include_tags`/`exclude_tags` or `scope_id`):
 
-- For availability/pass objectives, count `result` categories over the objective `period` using `list-results`/`list-call-results` with `--since`/`--before`.
+- For availability/pass objectives, count `result` categories over the objective `period` using `list-results`/`list-results-by-call` with `--from`/`--time`.
 - For latency objectives (`measure: mean`, metrics like `total`), use `query-api-performance` / `query-api-monitor-performance` with matching `metrics`/`measures` and window; align the query `interval` to the objective `period`.
 
 Report:

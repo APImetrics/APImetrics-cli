@@ -30,7 +30,7 @@ Find the failure boundary and the smallest evidence-backed remediation. Do not s
    EOF
    ```
    Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -61,15 +61,15 @@ If given a result ID, retrieve the result summary:
 apimetrics get-result <result-id> -o json
 ```
 
-**Know what this returns.** `get-result` (and each row of `list-call-results`/`list-results`) is a *summary*: `result` (`PASS`/`FAIL`/`WARN`/`ERROR`/`TIMEOUT`/`QUEUED`), `http_code`, `response_time` (ms), `location_id`, `test` (monitor ID), and `created`. It does **not** contain component timings, DNS/TLS detail, headers, body, or assertion breakdowns. Pull those from the dedicated commands in step 3 — do not claim a DNS or TLS cause from `get-result` alone.
+**Know what this returns.** `get-result` (and each row of `list-results-by-call`/`list-results`) is a *summary*: `result` (`PASS`/`FAIL`/`WARN`/`ERROR`/`TIMEOUT`/`QUEUED`), `http_code`, `response_time` (ms), `location_id`, `test` (monitor ID), and `created`. It does **not** contain component timings, DNS/TLS detail, headers, body, or assertion breakdowns. Pull those from the dedicated commands in step 3 — do not claim a DNS or TLS cause from `get-result` alone.
 
-For an API call series (the argument is the call/monitor ID; supports `--since`/`--before`/`--limit`):
+For an API call series (the argument is the call/monitor ID; supports `--from`/`--time`/`--limit`):
 
 ```bash
-apimetrics list-call-results <call-id> --since 2026-07-01T00:00:00Z -o json
+apimetrics list-results-by-call <call-id> --from 2026-07-01T00:00:00Z -o json
 ```
 
-For a project-wide sweep across monitor types, use `list-results --since ... --before ...`. Discover browser/MCP result access from `apimetrics --help`.
+For a project-wide sweep across monitor types, use `list-results --from ... --time ...`. Discover browser/MCP result access from `apimetrics --help`.
 
 Also read the monitor configuration (`get-call`, `read-browser-monitor`, `read-mcp-monitor`), conditions (`get-call-conditions <call-id>`), schedule, auth-setting metadata, and related SLO where those commands exist.
 
@@ -91,7 +91,7 @@ Compare failing and passing results across the dimensions below. Each names the 
 
 | Dimension | Where it comes from |
 |---|---|
-| status / HTTP code / total response time / location | `get-result`, `list-call-results`, `list-results` |
+| status / HTTP code / total response time / location | `get-result`, `list-results-by-call`, `list-results` |
 | component timings (`dns`, `connect`, `tls`, `ttfb`, `response`) and percentiles | `query-api-monitor-performance` (per monitor) or `query-api-performance` (project), body `{from,to,metrics,measures,group_by}` |
 | DNS provider / resolved IPs / CNAME chain / NS / mean lookup time | `query-api-monitor-dns-diagnostics` / `query-api-dns-diagnostics`, body `{from,to,group_by,locations}` |
 | response body / headers / named content | `get-result-content <result-id> <path>` (the second positional arg is the path into the captured content) |
@@ -131,7 +131,7 @@ Run an on-demand check only when authorized and when it will not create harmful 
 
 API:
 ```bash
-apimetrics run-call <call-id>
+apimetrics run-monitor <call-id>
 ```
 
 Browser/MCP:

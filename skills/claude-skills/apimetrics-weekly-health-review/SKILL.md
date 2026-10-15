@@ -30,7 +30,7 @@ Analyze the previous seven complete calendar days in the active project's timezo
    EOF
    ```
    Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
+6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
 7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
@@ -61,12 +61,12 @@ Run `apimetrics --help` and inspect help for the available inventory, result, an
 ```bash
 apimetrics list-calls -o json                 # {meta, results:[...]}
 apimetrics list-schedules -o json             # {data:[...]}  (note: data, not results)
-apimetrics list-results --since <ISO> --before <ISO> -o json   # project-wide result summaries
-apimetrics list-call-results <call-id> --since <ISO> --before <ISO> -o json
+apimetrics list-results --from <ISO> --time <ISO> -o json   # project-wide result summaries
+apimetrics list-results-by-call <call-id> --from <ISO> --time <ISO> -o json
 apimetrics get-result <result-id> -o json     # single result summary
 ```
 
-`list-results` and `list-call-results` support **server-side** `--since`/`--before` (ISO-8601) plus `--limit` (max 100) and `--cursor` — prefer these over pulling everything and filtering by hand. `list-results.meta.more`/`next_cursor` drive pagination.
+`list-results` and `list-results-by-call` support **server-side** `--from`/`--time` (ISO-8601) plus `--limit` (max 100) and `--cursor` — prefer these over pulling everything and filtering by hand. `list-results.meta.more`/`next_cursor` drive pagination.
 
 **Do not hand-compute percentiles from result summaries.** Result rows carry only `result`, `http_code`, `response_time` (ms), and `location_id` — not component timings. For latency distribution use the analytics commands, which compute the statistics server-side over your window:
 
@@ -101,7 +101,7 @@ Flag unscheduled, disabled, orphaned, and never-run monitors separately; do not 
 
 Two complementary sources, both with `-o json`:
 
-- **Availability / pass-fail** — `list-results --since --before` (project-wide) or `list-call-results <call-id> --since --before` (per monitor). Each row gives `result`, `http_code`, `response_time`, `location_id`, `test`, `created`. Page with `--cursor` until `meta.more` is false. Count by `result` category; do not disable pagination unless intentionally sampling.
+- **Availability / pass-fail** — `list-results --from --time` (project-wide) or `list-results-by-call <call-id> --from --time` (per monitor). Each row gives `result`, `http_code`, `response_time`, `location_id`, `test`, `created`. Page with `--cursor` until `meta.more` is false. Count by `result` category; do not disable pagination unless intentionally sampling.
 - **Latency distribution** — the `query-*-performance` commands from step 2, which return server-computed `mean`/`p50`/`p95`/`p99` per metric, optionally grouped by monitor, location, and interval.
 
 For conformance signal, `conformance-results-summary` is available but best-effort (it can return a 500 on projects with no conformance data — treat a failure as "no data", not a finding).
