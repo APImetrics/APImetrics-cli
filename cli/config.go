@@ -351,10 +351,16 @@ func ensureProject(cmd *cobra.Command) error {
 }
 
 func loginCmd() *cobra.Command {
-	return &cobra.Command{
+	var device bool
+
+	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to APImetrics",
 		Long: `Log in to APImetrics. Commands will automatically trigger login if needed, so this is rarely required.
+
+With --device, you approve the login in a browser on any device by confirming a
+short code, instead of being redirected back to this machine. Use it over SSH or
+anywhere the browser can't reach localhost.
 
 With --service-account, this fetches and caches an access token for the service
 account, which is a convenient way to check that its credentials work.`,
@@ -368,9 +374,18 @@ account, which is a convenient way to check that its credentials work.`,
 			if profile == nil || profile.Auth == nil || profile.Auth.Name == "" {
 				return fmt.Errorf("no auth configured for profile %q", viper.GetString("rsh-profile"))
 			}
-			handler, ok := authHandlers[profile.Auth.Name]
+			handlerName := profile.Auth.Name
+			if device {
+				if activeServiceAccount != nil {
+					return fmt.Errorf("--device can't be used with --service-account")
+				}
+				// Same parameters and cache key as the browser login, so the
+				// token is picked up by every later command.
+				handlerName = "oauth-device-code"
+			}
+			handler, ok := authHandlers[handlerName]
 			if !ok {
-				return fmt.Errorf("unknown auth handler %q", profile.Auth.Name)
+				return fmt.Errorf("unknown auth handler %q", handlerName)
 			}
 
 			// Use a dummy request — we only want the side effect of fetching and
@@ -394,6 +409,10 @@ account, which is a convenient way to check that its credentials work.`,
 			return selectProjectIfUnset()
 		},
 	}
+
+	cmd.Flags().BoolVar(&device, "device", false, "Log in by confirming a code in a browser on any device, e.g. over SSH")
+
+	return cmd
 }
 
 func logoutCmd() *cobra.Command {
