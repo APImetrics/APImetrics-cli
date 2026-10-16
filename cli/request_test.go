@@ -233,14 +233,18 @@ func TestRequestRetryTimeout(t *testing.T) {
 
 	reset(false)
 	viper.Set("rsh-retry", 1)
-	viper.Set("rsh-timeout", 1*time.Millisecond)
+	viper.Set("rsh-timeout", 10*time.Millisecond)
 
-	// Duration string value (with units)
+	// The delay must be far longer than the timeout. The context is only
+	// marked expired when its own timer callback runs, so with the two timers
+	// close together (it used to be 1ms against 2ms) a busy machine can fire
+	// gock's first and get a 200 back. gock stops waiting as soon as the
+	// context is done, so the long delay doesn't slow the test down.
 	gock.New("http://example.com").
 		Get("/").
 		Times(2).
 		Reply(http.StatusOK).
-		Delay(2 * time.Millisecond)
+		Delay(10 * time.Second)
 		// Note: delay seems to have a bug where subsequent requests without the
 		// delay are still delayed... For now just have it reply twice.
 
