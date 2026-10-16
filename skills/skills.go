@@ -71,7 +71,7 @@ func Init(cmd *cobra.Command) {
 	onboard := cobra.Command{
 		Use:   "onboard",
 		Short: "Print all APImetrics skills to stdout for agent onboarding",
-		Long: "Prints all embedded skill workflows to stdout.\n" +
+		Long: "Prints the embedded monitor-setup guides and the eight workflow skills to stdout.\n" +
 			"Run this command and include the output in your agent's context\n" +
 			"to onboard it on the correct APImetrics CLI workflows.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -276,12 +276,12 @@ func buildAgentsMD(skillNames []string, bin string) string {
 
 	b.WriteString("## Prerequisites\n\n")
 	b.WriteString("Before running any command:\n\n")
-	b.WriteString(fmt.Sprintf("1. Run `%s project show` to confirm a project is active — all commands fail without one. If none is set, run `%s project select`.\n", bin, bin))
+	b.WriteString(fmt.Sprintf("1. Run `%s project show` to confirm a project is active — project-scoped commands fail without one unless you pass `--project-id <id>`. If none is set, run `%s project select`.\n", bin, bin))
 	b.WriteString("2. Invoke the relevant skill for the task.\n\n")
 
 	b.WriteString("## Critical facts\n\n")
-	b.WriteString("- Commands are flat, not grouped: use `create-call`, not `calls create`\n")
-	b.WriteString("- Create commands take their body from stdin or from CLI Shorthand arguments — there is no `--body`, `--data`, or `-d` flag\n")
+	b.WriteString("- Commands are flat: `list-calls`, `create-call`, `run-monitor`\n")
+	b.WriteString("- Create and update commands take their JSON body from stdin or from CLI Shorthand arguments\n")
 	b.WriteString("- Prefer stdin with heredoc syntax; it keeps nested JSON unambiguous\n")
 	b.WriteString(fmt.Sprintf("- Correct pattern: `%s create-call <<'EOF' ... EOF`\n\n", bin))
 
@@ -294,6 +294,9 @@ func buildAgentsMD(skillNames []string, bin string) string {
 	return b.String()
 }
 
+// printSkills writes the three monitor-setup guides followed by the eight
+// workflow skills, so `onboard` carries the same content that
+// `skills install --claude-skills` installs.
 func printSkills() error {
 	entries, err := fs.ReadDir(skillFiles, "embed")
 	if err != nil {
@@ -301,6 +304,14 @@ func printSkills() error {
 	}
 
 	first := true
+	emit := func(data []byte) {
+		if !first {
+			fmt.Fprintln(cli.Stdout)
+		}
+		first = false
+		fmt.Fprint(cli.Stdout, string(data))
+	}
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -310,13 +321,26 @@ func printSkills() error {
 		if err != nil {
 			return fmt.Errorf("reading skill %s: %w", entry.Name(), err)
 		}
+		emit(data)
+	}
 
-		if !first {
-			fmt.Fprintln(cli.Stdout)
+	err = fs.WalkDir(claudeSkillFiles, "claude-skills", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		first = false
+		if d.IsDir() || path.Base(p) != "SKILL.md" {
+			return nil
+		}
 
-		fmt.Fprint(cli.Stdout, string(data))
+		data, err := claudeSkillFiles.ReadFile(p)
+		if err != nil {
+			return fmt.Errorf("reading skill %s: %w", p, err)
+		}
+		emit(data)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("reading embedded skills: %w", err)
 	}
 
 	return nil

@@ -20,8 +20,8 @@ Find the failure boundary and the smallest evidence-backed remediation. Do not s
    ```
    Run `apimetrics login` or `apimetrics project select` only when needed.
 3. The CLI command tree is generated from the platform's current OpenAPI description. Inspect `apimetrics <command> --help` before constructing a body or assuming an option name.
-4. Commands are generally flat (`list-calls`, `create-call`), not noun/verb groups.
-5. Create and update operations read JSON from stdin. Use a quoted heredoc:
+4. Commands are generally flat (`list-calls`, `create-call`). A command the server has deprecated is hidden from `--help` and prints `Command "X" is deprecated, do not use` on stderr; use the replacement `--help` lists (for example `list-api-monitors`/`list-monitors` and `create-api-monitor` where `list-calls`/`create-call` are deprecated).
+5. Create and update operations read JSON from stdin (CLI Shorthand arguments also work, but quote any value containing `//` and add `</dev/null`, since shorthand also reads stdin). Prefer a quoted heredoc:
    ```bash
    apimetrics <create-or-update-command> ... <<'EOF'
    {
@@ -29,9 +29,8 @@ Find the failure boundary and the smallest evidence-backed remediation. Do not s
    }
    EOF
    ```
-   Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
-7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
+6. Use `-o json` for analysis; it prints the response body. Use `-f` only after inspecting the response shape: `-f` paths are rooted at the whole response (`status`, `headers`, `body`), so they start with `body.`, and a path that matches nothing prints nothing — empty `-f` output is not evidence of an empty list. List bodies are NOT uniform: `list-calls`, `list-api-monitors`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` and `list-monitors` return `{"data":[...], "meta":...}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Single-quote `-f` paths so the shell doesn't expand `[]` (e.g. `-f 'body.results[0]'` vs `-f 'body.data[0]'`).
+7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation; the CLI appends it without validation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
 10. Do not mutate project configuration unless the user explicitly authorized the change. Before any mutation, show the planned objects and rollback path.
@@ -61,17 +60,17 @@ If given a result ID, retrieve the result summary:
 apimetrics get-result <result-id> -o json
 ```
 
-**Know what this returns.** `get-result` (and each row of `list-call-results`/`list-results`) is a *summary*: `result` (`PASS`/`FAIL`/`WARN`/`ERROR`/`TIMEOUT`/`QUEUED`), `http_code`, `response_time` (ms), `location_id`, `test` (monitor ID), and `created`. It does **not** contain component timings, DNS/TLS detail, headers, body, or assertion breakdowns. Pull those from the dedicated commands in step 3 — do not claim a DNS or TLS cause from `get-result` alone.
+**Know what this returns — it depends on your role.** Every caller gets `meta` and `timing`: `meta.result_category` (`PASS`/`SLOW`/`WARNING`/`FAIL` — HTTP 4xx lands in `WARNING`, connection errors in `FAIL`; empty while the run is queued), `meta.result` (the detail: `QUEUED` while in flight, then e.g. `COMPLETE`, `HTTP_CLIENT_ERROR`, `CONNECTION_ERROR`), `meta.http_code`, `meta.location_id`, `meta.call_id` (the monitor ID), `meta.start_time`, and `timing` (`dns`/`tcp`/`handshake`/`upload`/`processing`/`download`/`total`, ms). A below-ANALYST caller gets only that summary — no `request`, `response`, or `context`. Most project members (ANALYST or above) also get `request` (method, URL, headers), `response` (headers and body), `meta.dns_details`, and `meta.tls_version` by default. Add `--mode full` for the request body, `messages`/`log_messages`, and certificate detail, and `--header-style mapping` for name→value headers. An oversized response body is replaced by `"<< LARGE DATA >>"` with a `response.content_path`. Check `apimetrics get-result --help` and what actually comes back before assuming you need step 3's dedicated commands — but still don't claim a DNS or TLS cause from a single result alone.
 
-For an API call series (the argument is the call/monitor ID; supports `--since`/`--before`/`--limit`):
+For a series from one monitor of any type (API, browser, or MCP), use `list-results-by-call <monitor-id>`, whose flags are `--from`, `--time` (window end; both full ISO-8601 date-times, as a bare date is rejected), `--result-category`, `--cursor`, `--limit` (default 100, one page per call; repeat with `--cursor <meta.next_cursor>` while `meta.more` is true). `--result-category` takes `PASS`/`SLOW`/`WARNING`/`FAIL` and silently ignores any other value, returning every category:
 
 ```bash
-apimetrics list-call-results <call-id> --since 2026-07-01T00:00:00Z -o json
+apimetrics list-results-by-call <monitor-id> --from 2026-07-01T00:00:00Z -o json
 ```
 
-For a project-wide sweep across monitor types, use `list-results --since ... --before ...`. Discover browser/MCP result access from `apimetrics --help`.
+For a project-wide sweep across all monitors, use `list-results --from ... --time ...`.
 
-Also read the monitor configuration (`get-call`, `read-browser-monitor`, `read-mcp-monitor`), conditions (`get-call-conditions <call-id>`), schedule, auth-setting metadata, and related SLO where those commands exist.
+Also read the monitor configuration (`get-monitor` for any type, or `get-call`/`get-api-monitor`, `read-browser-monitor`, `read-mcp-monitor` — project the fields you need with `-f`, as `request.headers`/`request.body` can hold literal credentials), conditions (`get-call-conditions <call-id>`), schedule, auth-setting metadata, and related SLO where those commands exist.
 
 ### 2. Establish the timeline
 
@@ -91,13 +90,13 @@ Compare failing and passing results across the dimensions below. Each names the 
 
 | Dimension | Where it comes from |
 |---|---|
-| status / HTTP code / total response time / location | `get-result`, `list-call-results`, `list-results` |
+| status / HTTP code / total response time / location | `get-result`, `list-results-by-call`, `list-results` |
 | component timings (`dns`, `connect`, `tls`, `ttfb`, `response`) and percentiles | `query-api-monitor-performance` (per monitor) or `query-api-performance` (project), body `{from,to,metrics,measures,group_by}` |
 | DNS provider / resolved IPs / CNAME chain / NS / mean lookup time | `query-api-monitor-dns-diagnostics` / `query-api-dns-diagnostics`, body `{from,to,group_by,locations}` |
-| response body / headers / named content | `get-result-content <result-id> <path>` (the second positional arg is the path into the captured content) |
-| assertion / condition outcomes | `get-call-conditions <call-id>` plus the `result` category; `conformance-results` / `conformance-results-summary` for spec conformance |
-| browser screenshot | `get-result-screenshot <result-id>` |
-| MCP session step / tool response | the MCP result summary and `get-result-content` |
+| response body / headers | `get-result` (`response.content`, `response.headers`; `--mode full` adds the request body). For an oversized body (`"<< LARGE DATA >>"`), `get-result-content <result-id> <path>` is the retrieval endpoint — check its `--help`, and treat `Content not found` as not retrievable, not as an empty body |
+| assertion / condition outcomes | `get-call-conditions <call-id>` plus `meta.result_category`/`meta.result`; `conformance-results` / `conformance-results-summary` for spec conformance |
+| browser screenshot | `get-result-screenshot <result-id> > shot.jpg` (binary JPEG on stdout; browser results only) |
+| MCP session step / tool response | the MCP result from `get-result` |
 
 Example — is a slow/failing API monitor a DNS problem, and is it isolated to one location?
 
@@ -129,12 +128,7 @@ For each candidate, list supporting and contradicting evidence.
 
 Run an on-demand check only when authorized and when it will not create harmful traffic.
 
-API:
-```bash
-apimetrics run-call <call-id>
-```
-
-Browser/MCP:
+`run-monitor <monitor-id>` runs API, browser, and MCP monitors alike. It requires a body (at least `{}`) and returns the `result_id` to poll with `get-result` until `meta.result` is no longer `QUEUED`:
 ```bash
 apimetrics run-monitor <monitor-id> <<'EOF'
 {}
