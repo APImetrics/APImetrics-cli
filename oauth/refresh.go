@@ -57,7 +57,9 @@ func (ts *RefreshTokenSource) Token() (*oauth2.Token, error) {
 			return token, err
 		}
 
-		// Couldn't refresh, try the original source again.
+		// Couldn't refresh (e.g. the refresh token expired or was revoked),
+		// so fall back to the original source, which means a browser login.
+		cli.LogDebug("Refresh token rejected, logging in again: %v", err)
 	}
 
 	token, err := ts.TokenSource.Token()
