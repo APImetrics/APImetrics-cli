@@ -50,6 +50,14 @@ apimetrics login
 
 This opens your browser for OAuth2 authentication. Your credentials are cached locally and refreshed automatically.
 
+On a machine whose browser can't reach it — over SSH, in a container, or on a remote desktop — use the device flow instead:
+
+```bash
+apimetrics login --device
+```
+
+The CLI prints a URL and a short code. Open the URL in a browser on any device, check the code matches, and approve; the CLI finishes logging in once you do.
+
 ### 2. Select a project
 
 All commands require an active project. Run the following to choose one:

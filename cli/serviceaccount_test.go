@@ -2,12 +2,14 @@ package cli
 
 import (
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -177,4 +179,62 @@ func TestLogoutClearsOnlyServiceAccountToken(t *testing.T) {
 		assert.Empty(t, Cache.GetString(key+suffix), "%s should be cleared", suffix)
 	}
 	assert.Equal(t, "browser-token", Cache.GetString("apimetrics:default.token"))
+}
+
+// recordingAuth records which handler a login used and with what.
+type recordingAuth struct {
+	key    string
+	params map[string]string
+}
+
+func (a *recordingAuth) Parameters() []AuthParam { return nil }
+
+func (a *recordingAuth) OnRequest(req *http.Request, key string, params map[string]string) error {
+	a.key, a.params = key, params
+	return nil
+}
+
+func TestLoginDeviceUsesDeviceCodeHandler(t *testing.T) {
+	defer func(sa *ServiceAccount, project string, stdout io.Writer) {
+		activeServiceAccount, projectIDOverride, Stdout = sa, project, stdout
+	}(activeServiceAccount, projectIDOverride, Stdout)
+	activeServiceAccount, projectIDOverride, Stdout = nil, "project-42", io.Discard
+
+	viper.Set("rsh-profile", "default")
+	saved := authHandlers
+	authHandlers = map[string]AuthHandler{}
+	t.Cleanup(func() {
+		viper.Set("rsh-profile", "")
+		authHandlers = saved
+	})
+
+	browser, device := &recordingAuth{}, &recordingAuth{}
+	authHandlers["oauth-authorization-code"] = browser
+	authHandlers["oauth-device-code"] = device
+	initAPIConfig()
+
+	cmd := loginCmd()
+	require.NoError(t, cmd.Flags().Set("device", "true"))
+	require.NoError(t, cmd.RunE(cmd, nil))
+
+	// Same cache key and parameters as the browser login, so later commands
+	// pick up the token.
+	assert.Empty(t, browser.key)
+	assert.Equal(t, "apimetrics:default", device.key)
+	assert.Equal(t, configs["apimetrics"].Profiles["default"].Auth.Params, device.params)
+}
+
+func TestLoginDeviceRejectsServiceAccount(t *testing.T) {
+	defer func(sa *ServiceAccount) { activeServiceAccount = sa }(activeServiceAccount)
+	activeServiceAccount = &ServiceAccount{ClientID: "abc123", ClientSecret: "s3cret"}
+
+	viper.Set("rsh-profile", "default")
+	t.Cleanup(func() { viper.Set("rsh-profile", "") })
+
+	initAPIConfig()
+	applyCredentialOverrides()
+
+	cmd := loginCmd()
+	require.NoError(t, cmd.Flags().Set("device", "true"))
+	assert.ErrorContains(t, cmd.RunE(cmd, nil), "--device can't be used with --service-account")
 }
