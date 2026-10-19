@@ -9,15 +9,16 @@ description: >
 ## Input format
 
 `apimetrics` create commands take their body from stdin or from CLI Shorthand
-arguments. Prefer stdin with heredoc syntax — it keeps nested JSON unambiguous:
+arguments. Prefer stdin with heredoc syntax — it keeps nested JSON unambiguous.
+In shorthand, quote any value containing `//`, such as a URL:
+`url: '"https://example.com/health"'`. Shorthand also reads stdin, so add
+`</dev/null` when running it non-interactively.
 
 ```bash
 apimetrics create-call <<'EOF'
 { ... }
 EOF
 ```
-
-There is no `--body`, `--data`, or `-d` flag on any `apimetrics` command.
 
 ## Steps
 
@@ -54,7 +55,22 @@ apimetrics create-call <<'EOF'
 EOF
 ```
 
-**Validation gate:** Response must contain an `id` field. If creation fails with 400, check that `meta.name`, `request.url`, and `request.method` are all present.
+Where the server has deprecated `create-call` (it prints `Command "create-call" is
+deprecated, do not use`), use `create-api-monitor`, which takes a flat body and
+returns the same kind of ID:
+```bash
+apimetrics create-api-monitor <<'EOF'
+{
+  "name": "<monitor-name>",
+  "method": "GET",
+  "url": "<target-url>",
+  "headers": [{"key": "Accept", "value": "application/json"}],
+  "auth_id": "<auth-settings-id>"
+}
+EOF
+```
+
+**Validation gate:** Response must contain an `id` field. A 422 means a required field is missing — `detail[].loc` names it (`meta.name`, `request.method`, `request.url`; or `name`, `method`, `url` for `create-api-monitor`). A 400 means a value was rejected, e.g. `URL must have a hostname`.
 
 ### 2. Attach a schedule
 
@@ -90,43 +106,54 @@ EOF
 
 `frequency` is in seconds. Common values: `60` (1 min), `300` (5 min), `3600` (1 hour).
 
-**Validation gate:** Confirm the schedule lists the call ID in its targets before proceeding.
+**Validation gate:** Confirm the schedule lists the call ID in `schedule.target_ids` before proceeding (the schedule's own ID is at `meta.id`).
 
 ### 3. Run the monitor on-demand
 
-`run-call` takes the call ID as a positional argument:
+`run-monitor` takes the call ID as a positional argument and a JSON body (`{}` for defaults):
 ```bash
-apimetrics run-call <call-id>
+apimetrics run-monitor <call-id> <<'EOF'
+{}
+EOF
 ```
 
 The response contains a `result_id`. Save it for the next step.
 
-**Validation gate:** Response must contain `result_id`. A 422 response means the project is out of quota.
+**Validation gate:** Response must contain `result_id`. A 422 is a body validation error (for example, no body was sent); an out-of-quota project returns a separate `Project is out of quota` error.
 
 ### 4. Poll results to verify
 
 ```bash
-apimetrics list-call-results <call-id>
+apimetrics get-result <result-id>
 ```
 
-A successful result has `result.success: true` and an HTTP status code in the 2xx range. Poll until the result from step 3 appears (match by `result_id`). Use `-f` to narrow output:
+Poll until `meta.result` is no longer `QUEUED` (match by `result_id`); `meta.result_category` is empty until then. A successful result has `meta.result_category: PASS` and a 2xx `meta.http_code`. `SLOW` means it passed but was slow; `WARNING` (e.g. HTTP 4xx) or `FAIL` (e.g. a connection error) indicate a problem, and `meta.result` gives the detail (`COMPLETE`, `HTTP_CLIENT_ERROR`, `CONNECTION_ERROR`, …). Total time is `timing.total` in ms. To read just the outcome:
 
 ```bash
-apimetrics list-call-results <call-id> -f body.results[0]
+apimetrics get-result <result-id> -f 'body.meta.{result_category, result, http_code}'
 ```
 
-**Validation gate:** Confirm `result.success` is `true`. If `false`, inspect `result.failure_reason` and the response body for details.
+For the full run history of this monitor instead of a single result, use `list-results-by-call <monitor-id>`:
+
+```bash
+apimetrics list-results-by-call <monitor-id> --from <iso-datetime> -f 'body.results[0]'
+```
+
+**Validation gate:** Confirm `meta.result_category` is `PASS`. If not, inspect the result (a below-ANALYST caller only gets a summary from `get-result`; most project members get the full request/response/timing detail by default) for the failure cause.
 
 ## Hard rules
 
-- Always verify the call ID before attaching to a schedule — attaching the wrong ID silently succeeds.
+- Always verify the call ID before attaching to a schedule. Invalid or other-project IDs are rejected with 400, but a valid ID of a different monitor in this project is accepted without warning.
+- `run-monitor` starts a run, and `list-results-by-call` lists result history, for any monitor type — API, browser, or MCP.
 - Do not poll results in a tight loop. Wait 5–10 seconds between checks; on-demand runs typically complete within 30 seconds.
 - `frequency` on schedules is in seconds, not minutes.
 - `add-call-to-schedule` takes two positional args: schedule ID first, then target ID.
 
 ## Error recovery
 
-- **400 on create:** Missing required fields. Check `meta.name`, `request.url`, and `request.method` are all present and non-empty.
-- **401/403:** Confirm `--api-key` or project is configured. Run `apimetrics project show` to check the active project.
-- **422 on run:** Project is out of quota. Check billing or reduce monitor frequency.
+- **422 on create:** A required field is missing; `detail[].loc` names it.
+- **400 on create:** A value was rejected (e.g. `URL must have a hostname`); the error message names it.
+- **401/403:** Confirm login state and that a project is active with `apimetrics project show`.
+- **422 on run:** The body failed validation — send at least `{}`.
+- **Out of quota on run:** The error reads `Project is out of quota`. Check billing or reduce monitor frequency.
 - **No result after 60s:** The run may be queued behind other runs. Increase wait time or check monitor status.

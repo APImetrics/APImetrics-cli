@@ -21,8 +21,8 @@ Use the CLI's built-in hidden `bulk` workflow for local JSON checkout and synchr
    ```
    Run `apimetrics login` or `apimetrics project select` only when needed.
 3. The CLI command tree is generated from the platform's current OpenAPI description. Inspect `apimetrics <command> --help` before constructing a body or assuming an option name.
-4. Commands are generally flat (`list-calls`, `create-call`), not noun/verb groups.
-5. Create and update operations read JSON from stdin. Use a quoted heredoc:
+4. Commands are generally flat (`list-calls`, `create-call`). A command the server has deprecated is hidden from `--help` and prints `Command "X" is deprecated, do not use` on stderr; use the replacement `--help` lists (for example `list-api-monitors`/`list-monitors` and `create-api-monitor` where `list-calls`/`create-call` are deprecated).
+5. Create and update operations read JSON from stdin (CLI Shorthand arguments also work, but quote any value containing `//` and add `</dev/null`, since shorthand also reads stdin). Prefer a quoted heredoc:
    ```bash
    apimetrics <create-or-update-command> ... <<'EOF'
    {
@@ -30,9 +30,8 @@ Use the CLI's built-in hidden `bulk` workflow for local JSON checkout and synchr
    }
    EOF
    ```
-   Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
-7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
+6. Use `-o json` for analysis; it prints the response body. Use `-f` only after inspecting the response shape: `-f` paths are rooted at the whole response (`status`, `headers`, `body`), so they start with `body.`, and a path that matches nothing prints nothing — empty `-f` output is not evidence of an empty list. List bodies are NOT uniform: `list-calls`, `list-api-monitors`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` and `list-monitors` return `{"data":[...], "meta":...}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Single-quote `-f` paths so the shell doesn't expand `[]` (e.g. `-f 'body.results[0]'` vs `-f 'body.data[0]'`).
+7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation; the CLI appends it without validation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
 10. Do not mutate project configuration unless the user explicitly authorized the change. Before any mutation, show the planned objects and rollback path.
@@ -60,7 +59,7 @@ Confirm with:
 apimetrics bulk --help
 ```
 
-The bulk workflow keeps metadata and resource versions, detects local and remote changes, and can avoid overwriting local edits during pull.
+The bulk workflow keeps metadata and resource versions, detects local and remote changes with `status` and `diff --remote`, and does not overwrite local edits during pull. `bulk push` does not check for remote drift (it sends no conditional request), and it prints `Push complete.` with exit status 0 even when individual uploads fail.
 
 ## Workflow
 
@@ -77,20 +76,21 @@ Confirm:
 
 Do not initialize into a directory containing unrelated JSON files.
 
+A checkout writes each resource verbatim to the working directory and `.rshbulk/`, including any literal credentials in request headers or bodies. Never check out auth settings with `bulk`. Keep the checkout directory out of version control and delete it when done.
+
+The checkout does not record which project it belongs to. Pass the same `--project-id <id>` (or keep the same selected project) on **every** `bulk` command — `init`, `list`, `status`, `diff`, `pull`, `reset`, `push`. Against a different project, `status` reports every file as remote-removed and that project's resources as remote-added, and `pull` replaces the checkout.
+
 ### 2. Initialize the checkout
 
-`bulk init` takes exactly one URL argument that returns a list of resources, each with a link and a version. Use the CLI's own API-name scheme (`apimetrics:/<collection>`) rather than a raw host — the repository's own example is:
+`bulk init` takes exactly one URL argument that returns a list of resources, each with a link and a version. Use a real, resolvable URL — a full host+path against the CLI's configured API server (check the host with `apimetrics --version`) and the real resource path, shown on the `GET` line of `apimetrics <list-command> -v` (help text does not include it). Use the `/api/2/calls/` collection, whose `PUT` applies partial updates:
 
 ```bash
-apimetrics bulk init apimetrics:/monitors
+apimetrics bulk init 'qc-client.apimetrics.io/api/2/calls/?limit=1000' -f 'body.results.{id, version: meta.last_update}' --url-template='/api/2/calls/{id}' --project-id <id>
 ```
 
-`init` auto-detects the resource URL from `url`/`uri`/`self`/`link` and the version from `version`/`etag`/`last_modified`/`lastModified`/`modified`. If the collection response doesn't expose those directly, shape it with `-f` and/or build links from IDs with `--url-template`:
+`init` checks out one page only, so set `?limit=` on the URL (the list defaults to 100; `1000` is the maximum). Split a larger project into several checkouts scoped with a `-f` `[?...]` filter. `init` fails on a list of exactly one resource (`slice bounds out of range`); widen the list, or make that single change with the monitor's own update command. If `init` fails, delete `.rshbulk/` before retrying.
 
-```bash
-apimetrics bulk init apimetrics:/monitors -f 'body.{url, version: last_update}'
-apimetrics bulk init apimetrics:/monitors -f 'body.{id, version: last_update}' --url-template='/monitors/{id}'
-```
+`init` auto-detects the resource URL from `url`/`uri`/`self`/`link` and the version from `version`/`etag`/`last_modified`/`lastModified`/`modified`. The `list-calls` response doesn't expose a direct link, so the example above shapes it with `-f` down to `id`/`version` and builds the link from the ID with `--url-template`.
 
 Always confirm the exact flags first:
 
@@ -98,7 +98,7 @@ Always confirm the exact flags first:
 apimetrics bulk init --help
 ```
 
-Do not guess an undocumented host path; prefer the `apimetrics:` scheme, which resolves against the CLI's configured server. `bulk` is a hidden command group — it will not appear in the top-level `--help` list, but `apimetrics bulk --help` is authoritative.
+`bulk` is a hidden command group — it will not appear in the top-level `--help` list, but `apimetrics bulk --help` is authoritative.
 
 ### 3. Baseline
 
@@ -109,11 +109,11 @@ apimetrics bulk status
 apimetrics bulk list
 ```
 
-Read the metadata and checked-out JSON. Record a clean baseline before editing. If remote changes already exist, pull or reconcile first.
+Read the metadata and checked-out JSON. If remote changes already exist, pull or reconcile first. Then record a clean baseline by copying the checkout aside before editing (e.g. `cp -R . ../<name>-baseline`). `.rshbulk/` is overwritten by `pull` and by each successful `push`, so it is not a rollback source.
 
 ### 4. Edit and validate
 
-Make only the authorized JSON changes. Preserve IDs, versions, references, and unrelated fields.
+Make only the authorized JSON changes. Each file holds the full `GET` representation, and `PUT /api/2/calls/{id}` rejects its read-only fields (`id`, `meta.created`, `meta.last_update`, `meta.domain`, `meta.owner`, `meta.project_id`, `meta.monitor_type`, `meta.accept`, `meta.content_type`) with `extra_forbidden`. Because that `PUT` is a partial update, reduce each changed file to just the writable fields being changed — e.g. `{"meta": {"description": "…"}}` — and keep the full original in the baseline copy for review. After a successful push the CLI re-fetches the full resource into the file.
 
 Run:
 
@@ -122,7 +122,7 @@ apimetrics bulk status
 apimetrics bulk diff
 ```
 
-Review every changed, added, and removed resource. Use `--match` only after testing the expression against `bulk list`.
+Review every changed, added, and removed resource against the baseline copy. `--match` resolves top-level fields only (e.g. `id contains …`); a nested path such as `meta.name` is rejected with a warning and matches nothing. Test any expression against `bulk list` before using it with `diff` or `reset`, or pass explicit file names.
 
 ### 5. Reconcile remote drift
 
@@ -152,7 +152,8 @@ Run `apimetrics bulk push` only after explicit approval in the current conversat
 
 After push:
 
-- run `bulk status` and require clean local/remote state
+- treat any `Error uploading …` line as a failed push, whatever the final message and exit status say
+- run `bulk status` and require `No local changes` and a clean remote state
 - read changed resources through normal CLI commands
 - run affected monitors on demand
 - verify schedule targets and successful results
@@ -166,7 +167,7 @@ For unpushed local edits:
 apimetrics bulk reset [file...]
 ```
 
-For pushed changes, restore the reviewed baseline JSON and push only with fresh approval. Do not treat `reset` as a remote rollback.
+For pushed changes, write the baseline values of the changed writable fields (from the baseline copy) into the file as a partial body, show the diff, and push only with fresh approval. Pushing a full baseline file fails on the read-only fields. Do not treat `reset` as a remote rollback.
 
 ## Hard rules
 

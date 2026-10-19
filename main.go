@@ -51,6 +51,7 @@ func main() {
 	cli.AddAuth("oauth-client-credentials", &oauth.ClientCredentialsHandler{})
 	cli.AddAuth("oauth-authorization-code", &oauth.AuthorizationCodeHandler{})
 	cli.AddAuth("oauth-service-account", &oauth.ServiceAccountHandler{})
+	cli.AddAuth("oauth-device-code", &oauth.DeviceCodeHandler{})
 
 	// Run the CLI, parsing arguments, making requests, and printing responses.
 	if err := cli.Run(); err != nil {
