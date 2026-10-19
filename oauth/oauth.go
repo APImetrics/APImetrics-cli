@@ -55,9 +55,10 @@ func TokenHandler(source oauth2.TokenSource, key string, request *http.Request) 
 		cli.Cache.Set(tokenKey, token.AccessToken)
 
 		if token.RefreshToken != "" {
-			// Only set the refresh token if present. This prevents overwriting it
-			// after using a refresh token, because the newly returned token won't
-			// have another refresh token set on it (you keep using the same one).
+			// Only set the refresh token if present. With refresh token
+			// rotation the server returns a new one on every refresh, which
+			// replaces the old; without it the response has none, and keeping
+			// the existing one avoids wiping it out.
 			cli.Cache.Set(refreshKey, token.RefreshToken)
 		}
 

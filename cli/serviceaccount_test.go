@@ -181,6 +181,18 @@ func TestLogoutClearsOnlyServiceAccountToken(t *testing.T) {
 	assert.Equal(t, "browser-token", Cache.GetString("apimetrics:default.token"))
 }
 
+func TestBrowserLoginRequestsOfflineAccess(t *testing.T) {
+	defer func(sa *ServiceAccount) { activeServiceAccount = sa }(activeServiceAccount)
+	activeServiceAccount = nil
+
+	initAPIConfig()
+	profile := configs["apimetrics"].Profiles["default"]
+
+	// Without offline_access Auth0 issues no refresh token, and every expired
+	// access token sends the user back through the browser.
+	assert.Contains(t, strings.Fields(profile.Auth.Params["scopes"]), "offline_access")
+}
+
 // recordingAuth records which handler a login used and with what.
 type recordingAuth struct {
 	key    string
