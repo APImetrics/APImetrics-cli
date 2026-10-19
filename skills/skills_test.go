@@ -1,7 +1,13 @@
 package skills
 
 import (
+	"bytes"
+	"io/fs"
+	"path"
+	"strings"
 	"testing"
+
+	"apicontext.com/apimetrics/cli"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -93,5 +99,39 @@ func TestResolveTarget(t *testing.T) {
 			assert.Equal(t, c.wantTarget, target)
 			assert.Equal(t, c.wantAgent, kind)
 		})
+	}
+}
+
+func TestPrintSkillsIncludesEveryWorkflow(t *testing.T) {
+	var buf bytes.Buffer
+	orig := cli.Stdout
+	cli.Stdout = &buf
+	defer func() { cli.Stdout = orig }()
+
+	assert.NoError(t, printSkills())
+	out := buf.String()
+
+	var count int
+	err := fs.WalkDir(claudeSkillFiles, "claude-skills", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Base(p) != "SKILL.md" {
+			return err
+		}
+		count++
+		data, err := claudeSkillFiles.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		assert.True(t, strings.Contains(out, string(data)), "onboard output is missing %s", p)
+		return nil
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, 8, count)
+
+	entries, err := fs.ReadDir(skillFiles, "embed")
+	assert.NoError(t, err)
+	for _, e := range entries {
+		data, err := skillFiles.ReadFile("embed/" + e.Name())
+		assert.NoError(t, err)
+		assert.True(t, strings.Contains(out, string(data)), "onboard output is missing embed/%s", e.Name())
 	}
 }
