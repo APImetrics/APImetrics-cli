@@ -95,7 +95,9 @@ func initAPIConfig() {
 			"client_id":     buildCfg.ClientID,
 			"client_secret": "",
 			"redirect_url":  "",
-			"scopes":        "openid profile email",
+			// offline_access asks Auth0 for a refresh token, so an expired
+			// access token is renewed silently instead of via the browser.
+			"scopes": "openid profile email offline_access",
 		},
 	}
 

@@ -39,7 +39,7 @@ func runNoReset(cmd string) string {
 }
 
 func TestLoadCache(t *testing.T) {
-	// Invalidate any existin cache.
+	// Invalidate any existing cache.
 	Cache.Set("cache-test.expires", time.Now().Add(-24*time.Hour))
 	Cache.WriteConfig()
 	defer gock.Off()

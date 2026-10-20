@@ -27,7 +27,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/pb33f/libopenapi v0.22.3
 	github.com/schollz/progressbar/v3 v3.12.2
-	github.com/shamaton/msgpack/v2 v2.1.1
+	github.com/shamaton/msgpack/v3 v3.2.3
 	github.com/spf13/afero v1.9.3
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/pflag v1.0.5

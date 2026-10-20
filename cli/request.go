@@ -368,17 +368,22 @@ func isRetryable(code int) bool {
 
 // doRequestWithRetry logs and makes a request, retrying as needed (if
 // configured) and returning the last response.
+//
+// Each attempt gets its own rsh-timeout, derived from the request's original
+// context so a retry isn't born already expired. The timeout covers reading
+// the body too: it is released when the returned body is closed, not when
+// this function returns.
 func doRequestWithRetry(log bool, client *http.Client, req *http.Request) (*http.Response, error) {
 	retries := viper.GetInt("rsh-retry")
+	timeout := viper.GetDuration("rsh-timeout")
 
-	if retries == 0 {
-		return client.Do(req)
-	}
-
+	// Only buffer the body when it may have to be sent more than once.
 	var bodyContents []byte
-	if req.Body != nil {
+	if retries > 0 && req.Body != nil {
 		bodyContents, _ = io.ReadAll(req.Body)
 	}
+
+	parent := req.Context()
 
 	var resp *http.Response
 	var err error
@@ -395,24 +400,26 @@ func doRequestWithRetry(log bool, client *http.Client, req *http.Request) (*http
 			LogDebugRequest(req)
 		}
 
-		if timeout := viper.GetDuration("rsh-timeout"); timeout > 0 {
-			ctx, cancel := context.WithTimeout(req.Context(), timeout)
-			defer cancel()
-			req = req.WithContext(ctx)
+		attempt, cancel := req, context.CancelFunc(func() {})
+		if timeout > 0 {
+			var ctx context.Context
+			ctx, cancel = context.WithTimeout(parent, timeout)
+			attempt = req.WithContext(ctx)
 		}
 
 		start := time.Now()
-		resp, err = client.Do(req)
+		resp, err = client.Do(attempt)
 		if err != nil {
+			cancel()
 			if errors.Is(err, context.DeadlineExceeded) {
 				if triesLeft > 0 {
 					// Try again after letting the user know.
-					LogWarning("Got request timeout after %s, retrying", viper.GetDuration("rsh-timeout").Truncate(time.Millisecond))
+					LogWarning("Got request timeout after %s, retrying", timeout.Truncate(time.Millisecond))
 					continue
 				} else {
 					// Add a human-friendly error before the original (context deadline
 					// exceeded).
-					err = fmt.Errorf("Request timed out after %s: %w", viper.GetDuration("rsh-timeout"), err)
+					err = fmt.Errorf("Request timed out after %s: %w", timeout, err)
 				}
 			}
 			return resp, err
@@ -443,15 +450,34 @@ func doRequestWithRetry(log bool, client *http.Client, req *http.Request) (*http
 				}
 			}
 
+			// This response is being discarded, so release it and its timeout.
+			resp.Body.Close()
+			cancel()
+
 			LogWarning("Got %s, retrying in %s", resp.Status, retryAfter.Truncate(time.Millisecond))
 			time.Sleep(retryAfter)
 
 			continue
 		}
+
+		resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: cancel}
 		break
 	}
 
 	return resp, err
+}
+
+// cancelOnClose releases a request's timeout context once its response body
+// has been closed, so the body can still be read after the request returns.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
 }
 
 // Response describes a parsed HTTP response which can be marshalled to enable

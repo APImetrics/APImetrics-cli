@@ -20,8 +20,8 @@ Perform a read-only audit by default. The deliverable is a prioritized cleanup a
    ```
    Run `apimetrics login` or `apimetrics project select` only when needed.
 3. The CLI command tree is generated from the platform's current OpenAPI description. Inspect `apimetrics <command> --help` before constructing a body or assuming an option name.
-4. Commands are generally flat (`list-calls`, `create-call`), not noun/verb groups.
-5. Create and update operations read JSON from stdin. Use a quoted heredoc:
+4. Commands are generally flat (`list-calls`, `create-call`). A command the server has deprecated is hidden from `--help` and prints `Command "X" is deprecated, do not use` on stderr; use the replacement `--help` lists (for example `list-api-monitors`/`list-monitors` and `create-api-monitor` where `list-calls`/`create-call` are deprecated).
+5. Create and update operations read JSON from stdin (CLI Shorthand arguments also work, but quote any value containing `//` and add `</dev/null`, since shorthand also reads stdin). Prefer a quoted heredoc:
    ```bash
    apimetrics <create-or-update-command> ... <<'EOF'
    {
@@ -29,9 +29,8 @@ Perform a read-only audit by default. The deliverable is a prioritized cleanup a
    }
    EOF
    ```
-   Do not invent `--body`, `--data`, or `-d`.
-6. Use `-o json` for analysis. Use `-f` only after inspecting the response shape. The top-level response envelope includes status, headers, and `body`. List bodies are NOT uniform: `list-calls`, `list-results`, `list-call-results`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` returns `{"data":[...]}`; `list-slos`, `list-browser-monitors`, and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Inspect each command's own output before writing an `-f` path (e.g. `-f body.results[0]` vs `-f body.data[0]`).
-7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation.
+6. Use `-o json` for analysis; it prints the response body. Use `-f` only after inspecting the response shape: `-f` paths are rooted at the whole response (`status`, `headers`, `body`), so they start with `body.`, and a path that matches nothing prints nothing — empty `-f` output is not evidence of an empty list. List bodies are NOT uniform: `list-calls`, `list-api-monitors`, `list-results`, `list-results-by-call`, and `list-auth-settings` return `{"meta":..., "results":[...]}`; `list-schedules` and `list-monitors` return `{"data":[...], "meta":...}`; `list-browser-monitors` and `list-mcp-monitors` return a bare `{"results":[...]}` with no `meta`/pagination. Single-quote `-f` paths so the shell doesn't expand `[]` (e.g. `-f 'body.results[0]'` vs `-f 'body.data[0]'`).
+7. Use `-q key=value` only for query parameters confirmed by command help or observed request documentation; the CLI appends it without validation.
 8. Preserve evidence. Record the active project, commands run, IDs, time window, and the smallest response excerpts needed to support conclusions.
 9. Never print, store, or paste credentials into the report. Prefer existing auth-setting IDs. Do not include bearer tokens, cookies, API keys, client secrets, or private certificate contents.
 10. Do not mutate project configuration unless the user explicitly authorized the change. Before any mutation, show the planned objects and rollback path.
@@ -43,16 +42,19 @@ Perform a read-only audit by default. The deliverable is a prioritized cleanup a
 
 ### 1. Discover the estate
 
-Run the available list/read commands (JSON output), noting each envelope shape:
+Run the available list/read commands (JSON output), noting each envelope shape. Monitor `request.headers`/`request.body` and auth settings can hold literal credentials, so project each list with `-f` to the fields you need instead of printing full JSON:
 
-- API calls — `list-calls` (`{meta, results}`)
+- every monitor type — `list-monitors` (`{data, meta}`; type in `meta.monitor_type` = `api`/`www`/`mcp`), e.g. `-f 'body.data.{id, name: meta.name, type: meta.monitor_type, domain: meta.domain, tags: meta.tags}'`
+- API calls — `list-calls` (`{meta, results}`), or `list-api-monitors` where `list-calls` is deprecated
 - browser monitors — `list-browser-monitors` (bare `{results}`)
 - MCP monitors — `list-mcp-monitors` (bare `{results}`)
-- schedules — `list-schedules` (**`{data:[...]}`**), plus `list-schedule-downtimes` for maintenance windows
-- SLOs — `list-slos` (bare `{results}`), detail via `get-slo <slo-id>`
-- auth settings/tokens as metadata only — `list-auth-settings`, and `list-calls-by-auth <auth-id>` to size the blast radius of each shared credential
-- recent results — `list-results --since <ISO>` for working-vs-configured coverage
-- which schedules a call belongs to — `list-schedules-for-call <call-id>`
+- schedules — `list-schedules` (**`{data:[...], meta}`**; schedule ID at `data[].meta.id`, targets at `data[].schedule.target_ids`), plus `list-schedule-downtimes <schedule-id>` per schedule for maintenance windows
+- SLO — `get-project-slo` (a single object per project, scoped via `include_tags`/`exclude_tags`). `created: null` means no SLO is saved and the object holds platform defaults; report that as "no SLO defined"
+- auth settings/tokens as metadata only — `list-auth-settings` returns credential values (`keys.client_secret`, `settings.custom_variables`) in clear text, so always project it: `-f 'body.results.{id, name: meta.name, auth_type: settings.auth_type, domain: meta.domain}'`. Use `list-calls-by-auth <auth-id>` to size the blast radius of each shared credential
+- assertions — `get-call-conditions <call-id>` per API call, and `get-project-conditions` for the project defaults
+- locations — `list-agents-for-project`, plus each schedule's locations/regions
+- recent results — `list-results --from <ISO>` for working-vs-configured coverage
+- which schedules a call belongs to — `list-schedules-by-call <call-id>` (`{meta, results}`)
 
 ### 2. Normalize the inventory
 

@@ -3,12 +3,16 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/h2non/gock.v1"
 )
 
@@ -71,6 +75,19 @@ func (a *authHookFailure) OnRequest(req *http.Request, key string, params map[st
 }
 
 func TestAuthHookFailure(t *testing.T) {
+	// This test must not depend on what earlier tests left behind: `configs` is
+	// nil until initConfig runs, and an empty rsh-profile makes MakeRequest
+	// panic with "invalid profile" before it ever reaches the auth hook.
+	if configs == nil {
+		configs = apiConfigs{}
+	}
+	viper.Set("rsh-profile", "default")
+	t.Cleanup(func() {
+		viper.Set("rsh-profile", "")
+		delete(configs, "auth-hook-fail")
+		delete(authHandlers, "hook-fail")
+	})
+
 	configs["auth-hook-fail"] = &APIConfig{
 		Base: "http://auth-hook-fail.example.com",
 		Profiles: map[string]*APIProfile{
@@ -220,20 +237,70 @@ func TestRequestRetryTimeout(t *testing.T) {
 
 	reset(false)
 	viper.Set("rsh-retry", 1)
-	viper.Set("rsh-timeout", 1*time.Millisecond)
+	viper.Set("rsh-timeout", 10*time.Millisecond)
 
-	// Duration string value (with units)
+	// The delay must be far longer than the timeout. The context is only
+	// marked expired when its own timer callback runs, so with the two timers
+	// close together (it used to be 1ms against 2ms) a busy machine can fire
+	// gock's first and get a 200 back. gock stops waiting as soon as the
+	// context is done, so the long delay doesn't slow the test down. Both
+	// attempts time out, so the mock has to reply twice.
 	gock.New("http://example.com").
 		Get("/").
 		Times(2).
 		Reply(http.StatusOK).
-		Delay(2 * time.Millisecond)
-		// Note: delay seems to have a bug where subsequent requests without the
-		// delay are still delayed... For now just have it reply twice.
+		Delay(10 * time.Second)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com/", nil)
+	start := time.Now()
 	_, err := MakeRequest(req)
 
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "timed out")
+
+	// The retry gets a full timeout of its own rather than inheriting the
+	// first attempt's expired one, so it reaches the server too.
+	assert.True(t, gock.IsDone(), "the retry should have reached the server")
+	assert.GreaterOrEqual(t, time.Since(start), 20*time.Millisecond)
+}
+
+func TestRequestTimeoutWithoutRetries(t *testing.T) {
+	defer gock.Off()
+
+	reset(false)
+	viper.Set("rsh-retry", 0)
+	viper.Set("rsh-timeout", 10*time.Millisecond)
+
+	gock.New("http://example.com").
+		Get("/").
+		Reply(http.StatusOK).
+		Delay(10 * time.Second)
+
+	req, _ := http.NewRequest(http.MethodGet, "http://example.com/", nil)
+	_, err := MakeRequest(req)
+
+	assert.ErrorContains(t, err, "timed out")
+}
+
+func TestRequestTimeoutAllowsReadingBody(t *testing.T) {
+	reset(false)
+	viper.Set("rsh-retry", 1)
+	viper.Set("rsh-timeout", 30*time.Second)
+
+	// Larger than the transport buffers, so most of it is read from the
+	// connection after MakeRequest has returned.
+	body := strings.Repeat("x", 4<<20)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, server.URL, nil)
+	resp, err := MakeRequest(req, WithClient(server.Client()))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	read, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Len(t, read, len(body))
 }

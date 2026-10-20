@@ -113,7 +113,7 @@ func Init(name string, version string) {
   $ %s list-monitors
 
   # Create a monitor
-  $ %s create-monitor name: "Checkout flow", url: https://example.com/checkout`, name, name),
+  $ %s create-call meta.name: "Checkout flow", request.method: GET, request.url: '"https://example.com/checkout"'`, name, name),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			settings := viper.AllSettings()
 			LogDebug("Configuration: %v", settings)
