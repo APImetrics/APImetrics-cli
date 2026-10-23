@@ -623,6 +623,29 @@ jobs:
             echo "is_published=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # wingetcreate syncs the token owner's winget-pkgs fork before opening its
+      # PR, but gives up ("The forked repository could not be synced with the
+      # upstream commits") when the fork has fallen far behind, as it does
+      # between our infrequent releases (17,701 commits before v0.0.2). Sync
+      # it here first so wingetcreate finds it already current.
+      - name: Sync winget-pkgs fork
+        if: ${{ steps.winget_check.outputs.has_token == 'true' && steps.release_check.outputs.is_published == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          owner=$(gh api user --jq '.login')
+          fork="$owner/winget-pkgs"
+          if ! gh api "repos/$fork" --jq '.fork' >/dev/null 2>&1; then
+            echo "No $fork yet — wingetcreate will create it."
+            exit 0
+          fi
+          if gh repo sync "$fork" --source microsoft/winget-pkgs --branch master; then
+            echo "Synced $fork with microsoft/winget-pkgs."
+          else
+            echo "::warning::Could not sync $fork with microsoft/winget-pkgs — wingetcreate will try itself. If it fails, sync the fork manually and re-run this job."
+          fi
+
       - name: Submit WinGet package update
         if: ${{ steps.winget_check.outputs.has_token == 'true' && steps.release_check.outputs.is_published == 'true' }}
         shell: pwsh

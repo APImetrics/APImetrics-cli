@@ -200,6 +200,13 @@ The `wingetcreate update --submit` command creates a PR on `microsoft/winget-pkg
 |--------|-------|
 | `WINGET_GITHUB_TOKEN` | Token used by `wingetcreate` to push to your fork and open PRs on `microsoft/winget-pkgs` |
 
+Before running `wingetcreate`, the release workflow syncs the token owner's
+`winget-pkgs` fork with `microsoft/winget-pkgs`. Between releases the fork falls
+thousands of commits behind, and `wingetcreate`'s own sync can give up on a gap
+that size. The sync uses the same token, so a fine-grained PAT needs
+**Contents: read/write** on the fork, as above. If the sync fails, the job logs a
+warning and lets `wingetcreate` try anyway.
+
 ---
 
 ## Complete secrets reference
