@@ -634,7 +634,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
-          owner=$(gh api user --jq '.login')
+          if ! owner=$(gh api user --jq '.login'); then
+            echo "::warning::Could not look up the WINGET_GITHUB_TOKEN owner — skipping the fork sync; wingetcreate will try itself."
+            exit 0
+          fi
           fork="$owner/winget-pkgs"
           if ! gh api "repos/$fork" --jq '.fork' >/dev/null 2>&1; then
             echo "No $fork yet — wingetcreate will create it."
